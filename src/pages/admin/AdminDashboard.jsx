@@ -2,13 +2,17 @@ import { useState } from 'react'
 import UsuariosTab from './UsuariosTab'
 import ImportarAlumnosTab from './ImportarAlumnosTab'
 import ConfigEstanciaTab from './ConfigEstanciaTab'
+import ConfigComedorTab from './ConfigComedorTab'
+import DashboardPagos from './DashboardPagos'
 import { useAuth } from '../../contexts/AuthContext'
 import { tienePermiso } from '../../lib/permisos'
 
 const TABS = [
   { id: 'usuarios', label: 'Usuarios y permisos', permiso: 'admin.usuarios' },
   { id: 'importar', label: 'Importar alumnos', permiso: 'admin.importar' },
-  { id: 'estancia', label: 'Configurar estancia', permiso: 'admin.config' },
+  { id: 'estancia', label: 'Configurar estancia', permiso: 'admin.config_estancia' },
+  { id: 'comedor', label: 'Configurar comedor', permiso: 'admin.config_comedor' },
+  { id: 'pagos', label: 'Pagos', permiso: 'admin.pagos' },
 ]
 
 export default function AdminDashboard() {
@@ -20,7 +24,7 @@ export default function AdminDashboard() {
     <div>
       <h1 style={{ marginTop: 0 }}>Administración</h1>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
         {disponibles.map((t) => (
           <button
             key={t.id}
@@ -44,6 +48,8 @@ export default function AdminDashboard() {
       {tab === 'usuarios' && <UsuariosTab />}
       {tab === 'importar' && <ImportarAlumnosTab />}
       {tab === 'estancia' && <ConfigEstanciaTab />}
+      {tab === 'comedor' && <ConfigComedorTab />}
+      {tab === 'pagos' && <DashboardPagos />}
     </div>
   )
 }
