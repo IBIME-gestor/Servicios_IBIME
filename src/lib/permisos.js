@@ -37,7 +37,9 @@ export const CATALOGO_PERMISOS = [
     permisos: [
       { clave: 'admin.usuarios', etiqueta: 'Gestionar usuarios y permisos', descripcion: '' },
       { clave: 'admin.importar', etiqueta: 'Importar alumnos por Excel', descripcion: '' },
-      { clave: 'admin.config', etiqueta: 'Configurar tarifas de estancia', descripcion: '' },
+      { clave: 'admin.config_estancia', etiqueta: 'Configurar tarifas de estancia', descripcion: '' },
+      { clave: 'admin.config_comedor', etiqueta: 'Configurar precios de comedor', descripcion: '' },
+      { clave: 'admin.pagos', etiqueta: 'Ver panel de pagos (estancia y cafetería)', descripcion: '' },
     ],
   },
 ]
