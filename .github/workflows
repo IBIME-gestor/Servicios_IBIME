@@ -6,7 +6,6 @@ name: Publicar IBIME en Firebase
 on:
   push:
     branches: [main]
-
 jobs:
   publicar:
     runs-on: ubuntu-latest
