@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { PERMISO_ADMIN, tienePermiso } from '../lib/permisos'
+import RelojCDMX from './RelojCDMX'
 
 const NAV_ITEMS = [
   { to: '/alumnos', label: 'Alumnos', mod: 'admin', permiso: 'alumnos.ver' },
@@ -78,26 +79,29 @@ export default function Layout({ children }) {
             borderBottom: '1px solid var(--border)',
             background: 'var(--surface)',
             display: 'flex',
-            justifyContent: 'flex-end',
+            justifyContent: 'space-between',
             alignItems: 'center',
             gap: '0.6rem',
           }}
         >
-          <span style={{ color: 'var(--ink-muted)', fontSize: '0.9rem' }}>{user?.nombre}</span>
-          <span
-            style={{
-              fontSize: '0.75rem',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.02em',
-              color: 'var(--navy-700)',
-              background: 'var(--surface-sunken)',
-              padding: '0.2rem 0.5rem',
-              borderRadius: 4,
-            }}
-          >
-            {esAdmin ? 'Administrador' : 'Colaborador'}
-          </span>
+          <RelojCDMX />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ color: 'var(--ink-muted)', fontSize: '0.9rem' }}>{user?.nombre}</span>
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.02em',
+                color: 'var(--navy-700)',
+                background: 'var(--surface-sunken)',
+                padding: '0.2rem 0.5rem',
+                borderRadius: 4,
+              }}
+            >
+              {esAdmin ? 'Administrador' : 'Colaborador'}
+            </span>
+          </div>
         </header>
         <main style={{ flex: 1, padding: '1.5rem', maxWidth: 1100, width: '100%', margin: '0 auto' }}>
           {children}
