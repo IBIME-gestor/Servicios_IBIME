@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function estaAutenticado() {
+      return request.auth != null;
+    }
+
+    function misPermisos() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.permisos;
+    }
+
+    function esAdmin() {
+      return estaAutenticado() && 'admin' in misPermisos();
+    }
+
+    function tengoPermiso(clave) {
+      return esAdmin() || (estaAutenticado() && clave in misPermisos());
+    }
+
+    // Cada quien puede leer su propio perfil (para saber sus permisos al
+    // hacer login) y crearlo la primera vez que entra (auto-alta como
+    // colaborador: solo alumnos.ver, o admin si su correo está en la lista
+    // de administradores — ver AuthContext). Solo el admin puede cambiar
+    // permisos o desactivar a alguien después de esa primera vez.
+    match /usuarios/{uid} {
+      allow read: if estaAutenticado() && (request.auth.uid == uid || esAdmin());
+      allow create: if estaAutenticado() && request.auth.uid == uid;
+      allow update, delete: if esAdmin();
+    }
+
+    // Alumnos: cualquiera con sesión puede leer (para el directorio de solo
+    // lectura); solo quien tenga admin.importar (o admin) puede escribir.
+    match /alumnos/{alumnoId} {
+      allow read: if estaAutenticado();
+      allow write: if tengoPermiso('admin.importar');
+    }
+
+    // Consumos de cafetería: solo quien tenga cafeteria.registrar puede
+    // crear; cualquiera con sesión puede leer (lo usan caja y cafetería).
+    match /consumos/{consumoId} {
+      allow read: if estaAutenticado();
+      allow create: if tengoPermiso('cafeteria.registrar');
+      allow update, delete: if esAdmin();
+    }
+
+    // Estancias: solo quien tenga estancia.registrar puede crear/actualizar
+    // (llegada y retiro); cualquiera con sesión puede leer (lo usa caja).
+    match /estancias/{estanciaId} {
+      allow read: if estaAutenticado();
+      allow create, update: if tengoPermiso('estancia.registrar');
+      allow delete: if esAdmin();
+    }
+
+    // Configuración (tarifas de estancia, etc.): todos leen, solo
+    // admin.config (o admin) escribe.
+    match /config/{docId} {
+      allow read: if estaAutenticado();
+      allow write: if tengoPermiso('admin.config');
+    }
+  }
+}
