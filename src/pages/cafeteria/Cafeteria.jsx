@@ -42,7 +42,7 @@ export default function Cafeteria() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Cafetería</h1>
+      <h1 style={{ marginTop: 0 }}>🍽️ Cafetería</h1>
       <p style={{ color: 'var(--ink-muted)', marginTop: '-0.5rem' }}>
         Busca al alumno por nombre, matrícula o grupo y registra su consumo.
       </p>
