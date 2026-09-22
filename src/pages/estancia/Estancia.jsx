@@ -60,7 +60,7 @@ export default function Estancia() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Estancia</h1>
+      <h1 style={{ marginTop: 0 }}>🏫 Estancia</h1>
       <p style={{ color: 'var(--ink-muted)', marginTop: '-0.5rem' }}>
         Registra la llegada del alumno y, al retirarlo, captura quién lo recoge y su firma.
       </p>
