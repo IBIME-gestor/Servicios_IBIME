@@ -52,11 +52,19 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
-    // Configuración (tarifas de estancia, etc.): todos leen, solo
-    // admin.config (o admin) escribe.
+    // Configuración (tarifas de estancia, precios de comedor): todos leen,
+    // solo quien tenga admin.config_estancia o admin.config_comedor escribe.
     match /config/{docId} {
       allow read: if estaAutenticado();
-      allow write: if tengoPermiso('admin.config');
+      allow write: if tengoPermiso('admin.config_estancia') || tengoPermiso('admin.config_comedor');
+    }
+
+    // Registro semanal de cobro por alumno (casillas de "capturado" y
+    // "pagado" en Caja). Cualquiera con acceso a Caja puede leer/escribir;
+    // lo consulta también el panel de Pagos.
+    match /cobros_semana/{id} {
+      allow read: if estaAutenticado();
+      allow write: if tengoPermiso('caja.ver');
     }
   }
 }
