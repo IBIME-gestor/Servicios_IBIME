@@ -3,7 +3,7 @@
 // NUNCA subas tus llaves reales directo al repositorio de GitHub.
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -16,7 +16,14 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+
+// Caché local persistente: la app puede leer datos ya vistos y encolar
+// escrituras (registrar un consumo, marcar un pago, etc.) aunque se caiga
+// el internet del plantel — en cuanto vuelve la conexión, Firestore
+// sincroniza solo, sin que nadie tenga que hacer nada.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+})
 
 // Nota deliberada: NO usamos getStorage() de Firebase en ningún lado del
 // proyecto. Los archivos (firmas, etc.) se suben a Google Drive mediante
