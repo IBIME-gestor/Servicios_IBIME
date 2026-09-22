@@ -20,7 +20,7 @@ jobs:
           node-version: 20
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm install
 
       - name: Compilar la app (con tus credenciales guardadas como secretos)
         run: npm run build
