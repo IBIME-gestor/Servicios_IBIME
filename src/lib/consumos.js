@@ -11,14 +11,17 @@ import {
 import { db } from '../firebase'
 import { rangoSemanaActual } from './fechas'
 
-export async function registrarConsumo({ alumno, tipo, registradoPor }) {
+export async function registrarConsumo({ alumno, tipo, registradoPor, fechaServicio = null, retroactivo = false }) {
   await addDoc(collection(db, 'consumos'), {
     alumnoId: alumno.id,
     alumnoNombre: alumno.nombre,
     alumnoGrupo: alumno.grupo || '',
     tipo, // 'desayuno' | 'comida'
-    fecha: serverTimestamp(),
+    fecha: fechaServicio ? Timestamp.fromDate(fechaServicio) : serverTimestamp(),
+    // Auditoría: cuándo se hizo realmente la captura.
+    capturadoEn: serverTimestamp(),
     registradoPor,
+    retroactivo: Boolean(retroactivo),
   })
 }
 
