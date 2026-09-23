@@ -17,19 +17,22 @@ import { calcularCostoEstancia, minutosEntre, obtenerConfigEstancia } from './pr
 import { subirArchivoADrive } from './googleDrive'
 
 /** Registra la llegada de un alumno a estancia (abre el registro). */
-export async function iniciarEstancia({ alumno, registradoPor }) {
-  await addDoc(collection(db, 'estancias'), {
+export async function iniciarEstancia({ alumno, registradoPor, horaEntrada = null, retroactivo = false }) {
+  const ref = await addDoc(collection(db, 'estancias'), {
     alumnoId: alumno.id,
     alumnoNombre: alumno.nombre,
     alumnoGrupo: alumno.grupo || '',
-    horaEntrada: serverTimestamp(),
+    horaEntrada: horaEntrada ? Timestamp.fromDate(horaEntrada) : serverTimestamp(),
     horaSalida: null,
     minutos: null,
     costo: null,
     retiradoPor: null,
     firmaUrl: null,
     registradoPor,
+    capturadoEn: serverTimestamp(),
+    retroactivo: Boolean(retroactivo),
   })
+  return ref.id
 }
 
 /** Estancias abiertas (alumnos que siguen dentro), para la lista de la nani. */
@@ -43,19 +46,20 @@ export async function estanciasActivas() {
  * Cierra una estancia: calcula minutos y costo según la configuración
  * vigente, sube la firma a Drive (si se capturó) y guarda todo.
  */
-export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob }) {
+export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob, horaSalida = null, retroactivo = false }) {
   const ref = doc(db, 'estancias', estanciaId)
   const snap = await getDoc(ref)
   if (!snap.exists()) throw new Error('La estancia ya no existe.')
   const data = snap.data()
 
   const horaEntrada = data.horaEntrada.toDate()
-  const ahora = new Date()
+  const ahora = horaSalida || new Date()
   const minutos = minutosEntre(horaEntrada, ahora)
+  if (minutos < 0) throw new Error('La hora de retiro no puede ser anterior a la hora de entrada.')
   const config = await obtenerConfigEstancia()
   const { costo, desglose } = calcularCostoEstancia(minutos, config)
 
-  let firmaUrl = null
+  let firmaUrl = data.firmaUrl || null
   if (firmaBlob) {
     const nombreArchivo = `firma_${data.alumnoNombre.replace(/\s+/g, '_')}_${ahora.toISOString().slice(0, 10)}_${estanciaId}.png`
     const subida = await subirArchivoADrive(firmaBlob, nombreArchivo)
@@ -63,12 +67,14 @@ export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob }) 
   }
 
   await updateDoc(ref, {
-    horaSalida: serverTimestamp(),
+    horaSalida: horaSalida ? Timestamp.fromDate(horaSalida) : serverTimestamp(),
     minutos,
     costo,
     desgloseCosto: desglose,
     retiradoPor,
     firmaUrl,
+    capturadoEn: data.capturadoEn || serverTimestamp(),
+    retroactivo: Boolean(retroactivo || data.retroactivo),
   })
 
   return { minutos, costo, desglose }
