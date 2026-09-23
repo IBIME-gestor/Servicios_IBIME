@@ -75,7 +75,7 @@ export default function App() {
       <Route
         path="/admin"
         element={
-          <RutaPrivada permisoRequerido={['admin.usuarios', 'admin.importar', 'admin.config_estancia', 'admin.config_comedor', 'admin.pagos']}>
+          <RutaPrivada permisoRequerido={['admin.usuarios', 'admin.importar', 'admin.config_estancia', 'admin.config_comedor', 'admin.pagos', 'admin.carga_retroactiva']}>
             <Layout><AdminDashboard /></Layout>
           </RutaPrivada>
         }
