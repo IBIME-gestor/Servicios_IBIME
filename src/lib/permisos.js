@@ -40,6 +40,7 @@ export const CATALOGO_PERMISOS = [
       { clave: 'admin.config_estancia', etiqueta: 'Configurar tarifas de estancia', descripcion: '' },
       { clave: 'admin.config_comedor', etiqueta: 'Configurar precios de comedor', descripcion: '' },
       { clave: 'admin.pagos', etiqueta: 'Ver panel de pagos (estancia y cafetería)', descripcion: '' },
+      { clave: 'admin.carga_retroactiva', etiqueta: 'Hacer cargas retroactivas de comedor y estancia', descripcion: 'Permite capturar servicios de una fecha y hora anteriores conservando la fecha real de captura.' },
     ],
   },
 ]
