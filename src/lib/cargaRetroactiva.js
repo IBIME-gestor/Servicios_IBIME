@@ -7,7 +7,7 @@ import {
   Timestamp,
   where,
 } from 'firebase/firestore'
-import { db } from './firebase'
+import { db } from '../firebase'
 import { registrarConsumo } from './consumos'
 import { iniciarEstancia, finalizarEstancia } from './estancia'
 
