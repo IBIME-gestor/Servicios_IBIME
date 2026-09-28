@@ -5,6 +5,7 @@ import ConfigEstanciaTab from './ConfigEstanciaTab'
 import ConfigComedorTab from './ConfigComedorTab'
 import DashboardPagos from './DashboardPagos'
 import CargaRetroactivaTab from './CargaRetroactivaTab'
+import NotificacionesTab from './NotificacionesTab'
 import { useAuth } from '../../contexts/AuthContext'
 import { tienePermiso } from '../../lib/permisos'
 
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'comedor', label: 'Configurar comedor', permiso: 'admin.config_comedor' },
   { id: 'pagos', label: 'Pagos', permiso: 'admin.pagos' },
   { id: 'retroactiva', label: 'Carga retroactiva', permiso: 'admin.carga_retroactiva' },
+  { id: 'notificaciones', label: 'Notificaciones', permiso: 'admin.notificaciones' },
 ]
 
 export default function AdminDashboard() {
@@ -53,6 +55,7 @@ export default function AdminDashboard() {
       {tab === 'comedor' && <ConfigComedorTab />}
       {tab === 'pagos' && <DashboardPagos />}
       {tab === 'retroactiva' && <CargaRetroactivaTab />}
+      {tab === 'notificaciones' && <NotificacionesTab />}
     </div>
   )
 }
