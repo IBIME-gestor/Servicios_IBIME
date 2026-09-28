@@ -6,7 +6,8 @@ const CAMPOS = [
   { clave: 'matricula', etiqueta: 'Matrícula (identificador único)', requerido: true },
   { clave: 'grado', etiqueta: 'Grado', requerido: false },
   { clave: 'grupo', etiqueta: 'Grupo', requerido: false },
-  { clave: 'contacto', etiqueta: 'Contacto de padres', requerido: false },
+  { clave: 'contacto', etiqueta: 'Correo padre/madre/tutor', requerido: false },
+  { clave: 'correoAlumno', etiqueta: 'Correo alumno', requerido: false },
 ]
 
 export default function ImportarAlumnosTab() {
