@@ -41,22 +41,22 @@ service cloud.firestore {
     match /consumos/{consumoId} {
       allow read: if estaAutenticado();
       allow create: if tengoPermiso('cafeteria.registrar');
-      allow update, delete: if esAdmin();
+      allow update: if esAdmin() || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']) && (!request.resource.data.pagado || request.resource.data.cargado));
+      allow delete: if esAdmin();
     }
 
     // Estancias: solo quien tenga estancia.registrar puede crear/actualizar
     // (llegada y retiro); cualquiera con sesión puede leer (lo usa caja).
     match /estancias/{estanciaId} {
       allow read: if estaAutenticado();
-      allow create, update: if tengoPermiso('estancia.registrar');
+      allow create: if tengoPermiso('estancia.registrar');
+      allow update: if tengoPermiso('estancia.registrar') || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']));
       allow delete: if esAdmin();
     }
 
-    // Configuración (tarifas de estancia, precios de comedor): todos leen,
-    // solo quien tenga admin.config_estancia o admin.config_comedor escribe.
     match /config/{docId} {
       allow read: if estaAutenticado();
-      allow write: if tengoPermiso('admin.config_estancia') || tengoPermiso('admin.config_comedor');
+      allow write: if (docId == 'notificaciones' && tengoPermiso('admin.notificaciones')) || tengoPermiso('admin.config_estancia') || tengoPermiso('admin.config_comedor');
     }
 
     // Registro semanal de cobro por alumno (casillas de "capturado" y
