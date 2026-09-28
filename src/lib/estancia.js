@@ -26,6 +26,8 @@ export async function iniciarEstancia({ alumno, registradoPor, horaEntrada = nul
     horaSalida: null,
     minutos: null,
     costo: null,
+    cargado: false,
+    pagado: false,
     retiradoPor: null,
     firmaUrl: null,
     registradoPor,
