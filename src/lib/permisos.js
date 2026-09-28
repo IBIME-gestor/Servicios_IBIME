@@ -41,6 +41,7 @@ export const CATALOGO_PERMISOS = [
       { clave: 'admin.config_comedor', etiqueta: 'Configurar precios de comedor', descripcion: '' },
       { clave: 'admin.pagos', etiqueta: 'Ver panel de pagos (estancia y cafetería)', descripcion: '' },
       { clave: 'admin.carga_retroactiva', etiqueta: 'Hacer cargas retroactivas de comedor y estancia', descripcion: 'Permite capturar servicios de una fecha y hora anteriores conservando la fecha real de captura.' },
+      { clave: 'admin.notificaciones', etiqueta: 'Gestionar notificaciones semanales', descripcion: 'Cargar plantilla HTML y preparar envíos de resumen a padres/tutores.' },
     ],
   },
 ]
