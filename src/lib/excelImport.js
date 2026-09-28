@@ -30,7 +30,7 @@ export function leerExcel(file) {
 /**
  * Importa alumnos a Firestore aplicando un mapeo de columnas.
  * @param {Array<object>} rows - filas crudas del Excel (de leerExcel)
- * @param {{nombre: string, grado: string, grupo: string, matricula: string, contacto?: string}} mapeo
+ * @param {{nombre: string, grado: string, grupo: string, matricula: string, contacto?: string, correoAlumno?: string}} mapeo
  *   valores = nombre de la columna real en el Excel del usuario
  */
 export async function importarAlumnos(rows, mapeo) {
@@ -54,6 +54,7 @@ export async function importarAlumnos(rows, mapeo) {
           grado: mapeo.grado ? String(fila[mapeo.grado] ?? '').trim() : '',
           grupo: mapeo.grupo ? String(fila[mapeo.grupo] ?? '').trim() : '',
           contacto: mapeo.contacto ? String(fila[mapeo.contacto] ?? '').trim() : '',
+          correoAlumno: mapeo.correoAlumno ? String(fila[mapeo.correoAlumno] ?? '').trim() : '',
           activo: true,
         },
         { merge: true }
