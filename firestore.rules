@@ -1,342 +1,78 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ============================================================
-    // FUNCIONES GENERALES
-    // ============================================================
 
     function estaAutenticado() {
       return request.auth != null;
     }
 
-    function perfilActual() {
-      return get(
-        /databases/$(database)/documents/usuarios/$(request.auth.uid)
-      );
-    }
-
-    function tienePerfil() {
-      return estaAutenticado()
-        && exists(
-          /databases/$(database)/documents/usuarios/$(request.auth.uid)
-        );
-    }
-
     function misPermisos() {
-      return perfilActual().data.permisos;
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.permisos;
     }
 
     function esAdmin() {
-      return estaAutenticado()
-        && tienePerfil()
-        && 'admin' in misPermisos();
+      return estaAutenticado() && 'admin' in misPermisos();
     }
 
     function tengoPermiso(clave) {
-      return estaAutenticado()
-        && tienePerfil()
-        && (
-          esAdmin()
-          || clave in misPermisos()
-        );
+      return esAdmin() || (estaAutenticado() && clave in misPermisos());
     }
 
-
-    // ============================================================
-    // USUARIOS
-    // ============================================================
-    //
-    // Cada usuario puede leer su propio perfil.
-    //
-    // La creación inicial está limitada a:
-    //   permisos: ['alumnos.ver']
-    //
-    // Esto evita que alguien cree su propio documento con:
-    //   permisos: ['admin']
-    //
-    // Los administradores pueden modificar usuarios.
-    //
-    // ============================================================
-
+    // Cada quien puede leer su propio perfil (para saber sus permisos al
+    // hacer login) y crearlo la primera vez que entra (auto-alta como
+    // colaborador: solo alumnos.ver, o admin si su correo está en la lista
+    // de administradores — ver AuthContext). Solo el admin puede cambiar
+    // permisos o desactivar a alguien después de esa primera vez.
     match /usuarios/{uid} {
-
-      allow read: if estaAutenticado()
-        && (
-          request.auth.uid == uid
-          || esAdmin()
-        );
-
-      allow create: if estaAutenticado()
-        && request.auth.uid == uid
-        && request.resource.data.permisos is list
-        && request.resource.data.permisos.size() == 1
-        && request.resource.data.permisos[0] == 'alumnos.ver'
-        && request.resource.data.activo == true;
-
-      allow update: if tengoPermiso('admin.usuarios');
-
-      allow delete: if esAdmin();
+      allow read: if estaAutenticado() && (request.auth.uid == uid || esAdmin());
+      allow create: if estaAutenticado() && request.auth.uid == uid;
+      allow update, delete: if esAdmin();
     }
 
-
-    // ============================================================
-    // ALUMNOS
-    // ============================================================
-
+    // Alumnos: cualquiera con sesión puede leer (para el directorio de solo
+    // lectura); solo quien tenga admin.importar (o admin) puede escribir.
     match /alumnos/{alumnoId} {
-
-      // Los usuarios autenticados pueden consultar alumnos.
       allow read: if estaAutenticado();
-
-      // Importación / edición de alumnos.
-      allow create, update, delete: if tengoPermiso('admin.importar');
+      allow write: if tengoPermiso('admin.importar');
     }
 
-
-    // ============================================================
-    // CONSUMOS DE CAFETERÍA
-    // ============================================================
-    //
-    // Crear:
-    //   cafeteria.registrar
-    //
-    // Si el registro es retroactivo:
-    //   admin.carga_retroactiva
-    //
-    // Caja puede modificar únicamente estados de cobro.
-    //
-    // ============================================================
-
+    // Consumos de cafetería: solo quien tenga cafeteria.registrar puede
+    // crear; cualquiera con sesión puede leer (lo usan caja y cafetería).
     match /consumos/{consumoId} {
-
       allow read: if estaAutenticado();
-
-      allow create: if tengoPermiso('cafeteria.registrar')
-        && (
-          request.resource.data.retroactivo != true
-          || tengoPermiso('admin.carga_retroactiva')
-        );
-
-      allow update: if
-        // Administrador: puede modificar cualquier campo.
-        esAdmin()
-
-        ||
-
-        // Caja: solamente campos relacionados con cobro.
-        (
-          tengoPermiso('caja.ver')
-          &&
-          request.resource.data.diff(resource.data)
-            .affectedKeys()
-            .hasOnly([
-              'cargado',
-              'cargadoPor',
-              'fechaCargado',
-              'pagado',
-              'pagadoPor',
-              'fechaPagado'
-            ])
-          &&
-          (
-            !request.resource.data.pagado
-            || request.resource.data.cargado
-          )
-        );
-
+      allow create: if tengoPermiso('cafeteria.registrar');
+      allow update: if esAdmin() || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']) && (!request.resource.data.pagado || request.resource.data.cargado));
       allow delete: if esAdmin();
     }
 
-
-    // ============================================================
-    // ESTANCIAS
-    // ============================================================
-    //
-    // Crear:
-    //   estancia.registrar
-    //
-    // Si es retroactiva:
-    //   admin.carga_retroactiva
-    //
-    // Actualizar:
-    //   estancia.registrar para entrada/salida
-    //   caja.ver para estados de cobro
-    //
-    // ============================================================
-
+    // Estancias: solo quien tenga estancia.registrar puede crear/actualizar
+    // (llegada y retiro); cualquiera con sesión puede leer (lo usa caja).
     match /estancias/{estanciaId} {
-
       allow read: if estaAutenticado();
-
-      allow create: if tengoPermiso('estancia.registrar')
-        && (
-          request.resource.data.retroactivo != true
-          || tengoPermiso('admin.carga_retroactiva')
-        );
-
-      allow update: if
-        // Personal de estancia puede cerrar/modificar una estancia.
-        tengoPermiso('estancia.registrar')
-
-        ||
-
-        // Caja solamente puede modificar estados de cobro.
-        (
-          tengoPermiso('caja.ver')
-          &&
-          request.resource.data.diff(resource.data)
-            .affectedKeys()
-            .hasOnly([
-              'cargado',
-              'cargadoPor',
-              'fechaCargado',
-              'pagado',
-              'pagadoPor',
-              'fechaPagado'
-            ])
-          &&
-          (
-            !request.resource.data.pagado
-            || request.resource.data.cargado
-          )
-        );
-
+      allow create: if tengoPermiso('estancia.registrar');
+      allow update: if tengoPermiso('estancia.registrar') || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']));
       allow delete: if esAdmin();
     }
 
-
-    // ============================================================
-    // PLANES DE COMEDOR / MENSUALIDADES
-    // ============================================================
-    //
-    // Esta colección es utilizada actualmente por Caja.
-    //
-    // Crear:
-    //   caja.ver
-    //
-    // Actualizar:
-    //   solamente estados de cobro para usuarios de Caja.
-    //
-    // El administrador puede hacer cualquier modificación.
-    //
-    // ============================================================
-
-    match /planes_comedor/{planId} {
-
+    // Catálogo de planes de comedor.
+    // Separa los planes disponibles (catálogo) de las mensualidades
+    // ya asignadas a alumnos (planes_comedor).
+    match /catalogo_planes_comedor/{planId} {
       allow read: if estaAutenticado();
-
-      allow create: if tengoPermiso('caja.ver');
-
-      allow update: if
-        esAdmin()
-
-        ||
-
-        (
-          tengoPermiso('caja.ver')
-          &&
-          request.resource.data.diff(resource.data)
-            .affectedKeys()
-            .hasOnly([
-              'cargado',
-              'cargadoPor',
-              'fechaCargado',
-              'pagado',
-              'pagadoPor',
-              'fechaPagado'
-            ])
-          &&
-          (
-            !request.resource.data.pagado
-            || request.resource.data.cargado
-          )
-        );
-
-      allow delete: if esAdmin();
+      allow create, update, delete: if tengoPermiso('admin.planes_comedor');
     }
-
-
-    // ============================================================
-    // CONFIGURACIÓN GENERAL
-    // ============================================================
-    //
-    // Documentos utilizados actualmente:
-    //
-    //   config/estancia
-    //   config/comedor
-    //   config/notificaciones
-    //
-    // Todos los usuarios autenticados pueden leer configuración.
-    // Solamente los permisos administrativos correspondientes pueden
-    // modificarla.
-    //
-    // ============================================================
 
     match /config/{docId} {
-
       allow read: if estaAutenticado();
-
-      allow write: if
-        // Configuración de estancia.
-        (
-          docId == 'estancia'
-          && tengoPermiso('admin.config_estancia')
-        )
-
-        ||
-
-        // Configuración de comedor.
-        (
-          docId == 'comedor'
-          && tengoPermiso('admin.config_comedor')
-        )
-
-        ||
-
-        // Plantilla de notificaciones.
-        (
-          docId == 'notificaciones'
-          && tengoPermiso('admin.notificaciones')
-        )
-
-        ||
-
-        // Administrador general.
-        esAdmin();
+      allow write: if (docId == 'notificaciones' && tengoPermiso('admin.notificaciones')) || tengoPermiso('admin.config_estancia') || tengoPermiso('admin.config_comedor');
     }
 
-
-    // ============================================================
-    // COBROS SEMANALES
-    // ============================================================
-    //
-    // Utilizado por el módulo Caja.
-    //
-    // ============================================================
-
+    // Registro semanal de cobro por alumno (casillas de "capturado" y
+    // "pagado" en Caja). Cualquiera con acceso a Caja puede leer/escribir;
+    // lo consulta también el panel de Pagos.
     match /cobros_semana/{id} {
-
       allow read: if estaAutenticado();
-
-      allow create, update: if tengoPermiso('caja.ver');
-
-      allow delete: if esAdmin();
-    }
-
-
-    // ============================================================
-    // BLOQUEO POR DEFECTO
-    // ============================================================
-    //
-    // Cualquier colección que no esté declarada explícitamente arriba
-    // queda bloqueada.
-    //
-    // ============================================================
-
-    match /{document=**} {
-      allow read, write: if false;
+      allow write: if tengoPermiso('caja.ver');
     }
   }
 }
