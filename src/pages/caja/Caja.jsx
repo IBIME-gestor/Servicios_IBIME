@@ -15,6 +15,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { listarAlumnosActivos } from '../../lib/alumnos'
 import { obtenerConfigComedor } from '../../lib/pricingComedor'
 import { marcarDetalleCobro } from '../../lib/cobros'
+import { listarPlanesComedor } from '../../lib/planesComedor'
 import { db } from '../../firebase'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
 
@@ -110,6 +111,7 @@ export default function Caja() {
   const [consumos, setConsumos] = useState([])
   const [estancias, setEstancias] = useState([])
   const [configComedor, setConfigComedor] = useState(null)
+  const [catalogoPlanes, setCatalogoPlanes] = useState([])
   const [planes, setPlanes] = useState([])
   const [texto, setTexto] = useState('')
   const [expandirRegistro, setExpandirRegistro] = useState(false)
@@ -119,7 +121,7 @@ export default function Caja() {
   const [guardando, setGuardando] = useState('')
   const [error, setError] = useState('')
   const [mostrarMensualidad, setMostrarMensualidad] = useState(false)
-  const [formMensualidad, setFormMensualidad] = useState({ tipo: 'desayuno', desde: fechaInput(hoy), hasta: fechaInput(hoy), monto: '' })
+  const [formMensualidad, setFormMensualidad] = useState({ tipo: 'desayuno', desde: fechaInput(hoy), hasta: fechaInput(hoy), monto: '', planCatalogoId: '' })
 
   const inicio = useMemo(() => parseInputDate(fechaDesde, false), [fechaDesde])
   const fin = useMemo(() => parseInputDate(fechaHasta, true), [fechaHasta])
@@ -132,16 +134,18 @@ export default function Caja() {
     setCargando(true)
     setError('')
     try {
-      const [a, c, e, cfg] = await Promise.all([
+      const [a, c, e, cfg, cfgPlanes] = await Promise.all([
         listarAlumnosActivos(),
         cargarConsumosRango(inicio, fin),
         cargarEstanciasRango(inicio, fin),
         obtenerConfigComedor(),
+        listarPlanesComedor(),
       ])
       setAlumnos(a)
       setConsumos(c)
       setEstancias(e.filter((x) => x.horaSalida))
       setConfigComedor(cfg)
+      setCatalogoPlanes(cfgPlanes.filter((p) => p.activo !== false))
       if (seleccionadoId) {
         const p = await cargarPlanesAlumno(seleccionadoId)
         setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
@@ -242,23 +246,27 @@ export default function Caja() {
     const hasta = parseInputDate(formMensualidad.hasta, true)
     if (desde > hasta) return setError('La fecha inicial de la mensualidad no puede ser posterior a la final.')
     const diasHabiles = contarDiasHabiles(desde, hasta)
-    const monto = Number(formMensualidad.monto)
-    if (!Number.isFinite(monto) || monto <= 0) return setError('Captura un monto mensual válido.')
+    const planCatalogo = catalogoPlanes.find((p) => p.id === formMensualidad.planCatalogoId) || null
+    const tipo = planCatalogo?.tipo || formMensualidad.tipo
+    const monto = Number(planCatalogo?.monto ?? formMensualidad.monto)
+    if (!Number.isFinite(monto) || monto <= 0) return setError('Captura o selecciona un monto mensual válido.')
 
     setGuardando('nueva-mensualidad')
     setError('')
     try {
       const existentes = await cargarPlanesAlumno(seleccionado.id)
       const existeSolapado = existentes.some((p) => {
-        if (p.tipo !== formMensualidad.tipo || p.activo === false) return false
+        if (p.tipo !== tipo || p.activo === false) return false
         return solapaRango(p, desde, hasta)
       })
-      if (existeSolapado) throw new Error(`Ya existe una mensualidad activa de ${formMensualidad.tipo} que se cruza con ese periodo.`)
+      if (existeSolapado) throw new Error(`Ya existe una mensualidad activa de ${tipo} que se cruza con ese periodo.`)
 
       await addDoc(collection(db, 'planes_comedor'), {
         alumnoId: seleccionado.id,
         alumnoNombre: seleccionado.nombre,
-        tipo: formMensualidad.tipo,
+        tipo,
+        planCatalogoId: planCatalogo?.id || null,
+        planCatalogoNombre: planCatalogo?.nombre || null,
         fechaInicio: Timestamp.fromDate(desde),
         fechaFin: Timestamp.fromDate(hasta),
         diasHabiles,
@@ -273,7 +281,7 @@ export default function Caja() {
       const p = await cargarPlanesAlumno(seleccionado.id)
       setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
       setMostrarMensualidad(false)
-      setFormMensualidad({ tipo: 'desayuno', desde: fechaInput(inicio), hasta: fechaInput(fin), monto: '' })
+      setFormMensualidad({ tipo: 'desayuno', desde: fechaInput(inicio), hasta: fechaInput(fin), monto: '', planCatalogoId: '' })
     } catch (err) {
       console.error(err)
       setError(err?.message || 'No fue posible crear la mensualidad.')
@@ -391,10 +399,11 @@ export default function Caja() {
 
             {mostrarMensualidad && <form onSubmit={crearMensualidad} className="card" style={{ marginTop: '0.8rem', padding: '1rem', background: 'var(--surface-sunken)' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '0.7rem' }}>
-                <label><span>Concepto</span><select className="input" value={formMensualidad.tipo} onChange={e => setFormMensualidad({ ...formMensualidad, tipo: e.target.value })}><option value="desayuno">Desayuno</option><option value="comida">Comida</option></select></label>
+                <label><span>Plan del catálogo</span><select className="input" value={formMensualidad.planCatalogoId} onChange={e => { const id = e.target.value; const p = catalogoPlanes.find(x => x.id === id); setFormMensualidad({ ...formMensualidad, planCatalogoId: id, tipo: p?.tipo || formMensualidad.tipo, monto: p?.monto ?? formMensualidad.monto }) }}><option value="">Captura manual</option>{catalogoPlanes.map(p => <option key={p.id} value={p.id}>{p.nombre} · ${Number(p.monto || 0).toFixed(2)}</option>)}</select></label>
+                <label><span>Concepto</span><select className="input" value={formMensualidad.tipo} disabled={Boolean(formMensualidad.planCatalogoId)} onChange={e => setFormMensualidad({ ...formMensualidad, tipo: e.target.value })}><option value="desayuno">Desayuno</option><option value="comida">Comida</option></select></label>
                 <label><span>Desde</span><input className="input" type="date" value={formMensualidad.desde} onChange={e => setFormMensualidad({ ...formMensualidad, desde: e.target.value })}/></label>
                 <label><span>Hasta</span><input className="input" type="date" value={formMensualidad.hasta} onChange={e => setFormMensualidad({ ...formMensualidad, hasta: e.target.value })}/></label>
-                <label><span>Monto mensual</span><input className="input" type="number" min="0" step="0.01" value={formMensualidad.monto} placeholder="0.00" onChange={e => setFormMensualidad({ ...formMensualidad, monto: e.target.value })}/></label>
+                <label><span>Monto mensual</span><input className="input" type="number" min="0" step="0.01" value={formMensualidad.monto} readOnly={Boolean(formMensualidad.planCatalogoId)} placeholder="0.00" onChange={e => setFormMensualidad({ ...formMensualidad, monto: e.target.value })}/></label>
               </div>
               <div style={{ marginTop: '0.7rem', fontSize: '0.78rem', color: 'var(--ink-muted)' }}>Días hábiles calculados: <strong>{contarDiasHabiles(parseInputDate(formMensualidad.desde), parseInputDate(formMensualidad.hasta, true))}</strong>. El contador de uso será por servicio: desayuno 1/24, 2/24… y comida 1/24, 2/24… de manera independiente.</div>
               <button className="btn btn-primary" disabled={guardando === 'nueva-mensualidad'} style={{ marginTop: '0.8rem' }}>{guardando === 'nueva-mensualidad' ? 'Guardando…' : 'Guardar mensualidad'}</button>
