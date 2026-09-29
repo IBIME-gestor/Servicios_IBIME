@@ -355,7 +355,7 @@ export default function Caja() {
                     <td style={{ padding: '0.7rem 0.4rem' }}><strong>{selected ? '▶ ' : ''}{a.nombre}</strong><div style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>{a.matricula}</div></td>
                     <td>{a.grado} {a.grupo}</td><td>🍽️ {a.cafeteria.length}</td><td>🏫 {a.estancia.length}</td><td><strong>{dinero(tc + te)}</strong></td>
                   </tr>
-                ))}
+                })}
               </tbody>
             </table>
           </div>
