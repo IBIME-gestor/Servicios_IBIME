@@ -196,7 +196,16 @@ export default function Caja() {
   const planComidaPagado = planesComida.some((p) => p.pagado === true)
 
   function estaCubiertoPorMensualidad(consumo) {
-    return consumo.tipo === 'desayuno' ? planDesayunoActivo : planComidaActivo
+    const planesTipo = consumo.tipo === 'desayuno' ? planesDesayuno : planesComida
+    const fechaConsumo = consumo.fecha instanceof Date
+      ? consumo.fecha
+      : (consumo.fecha?.toDate ? consumo.fecha.toDate() : new Date(consumo.fecha))
+    return planesTipo.some((plan) => {
+      if (plan.pagado !== true) return false
+      const desdePlan = plan.fechaInicio?.toDate ? plan.fechaInicio.toDate() : new Date(plan.fechaInicio)
+      const hastaPlan = plan.fechaFin?.toDate ? plan.fechaFin.toDate() : new Date(plan.fechaFin)
+      return fechaConsumo >= inicioDelDia(desdePlan) && fechaConsumo <= finDelDia(hastaPlan)
+    })
   }
 
   const costoConsumo = (c) => Number(c.costo) || (c.tipo === 'desayuno' ? Number(configComedor?.precioDesayuno || 0) : Number(configComedor?.precioComida || 0))
