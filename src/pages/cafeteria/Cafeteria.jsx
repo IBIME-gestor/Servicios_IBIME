@@ -3,6 +3,8 @@ import { useAuth } from '../../contexts/AuthContext'
 import { listarAlumnosActivos, filtrarAlumnos } from '../../lib/alumnos'
 import { registrarConsumo, consumosSemanaAlumno } from '../../lib/consumos'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
+import CargaMasivaServicios from '../../components/CargaMasivaServicios'
+import { tienePermiso } from '../../lib/permisos'
 
 export default function Cafeteria() {
   const { user } = useAuth()
@@ -12,6 +14,7 @@ export default function Cafeteria() {
   const [resumen, setResumen] = useState([])
   const [registrando, setRegistrando] = useState(false)
   const [aviso, setAviso] = useState('')
+  const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false)
 
   useEffect(() => {
     listarAlumnosActivos().then(setAlumnos)
@@ -46,6 +49,24 @@ export default function Cafeteria() {
       <p style={{ color: 'var(--ink-muted)', marginTop: '-0.5rem' }}>
         Busca al alumno por nombre, matrícula o grupo y registra su consumo.
       </p>
+
+      {tienePermiso(user, 'cafeteria.carga_masiva') && (
+        <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-outline"
+            type="button"
+            onClick={() => setMostrarCargaMasiva(v => !v)}
+          >
+            {mostrarCargaMasiva ? 'Ocultar carga masiva' : '📦 Carga masiva'}
+          </button>
+        </div>
+      )}
+
+      {mostrarCargaMasiva && (
+        <div style={{ marginBottom: '1rem' }}>
+          <CargaMasivaServicios tipo="comedor" />
+        </div>
+      )}
 
       <div style={{ position: 'relative', maxWidth: 420, marginBottom: '1.5rem' }}>
         <input
