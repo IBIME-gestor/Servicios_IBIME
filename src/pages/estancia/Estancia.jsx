@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { listarAlumnosActivos, filtrarAlumnos } from '../../lib/alumnos'
 import { iniciarEstancia, estanciasActivas, finalizarEstancia } from '../../lib/estancia'
+import { tienePermiso } from '../../lib/permisos'
+import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 import { formatoHora } from '../../lib/fechas'
 import FirmaPad from '../../components/FirmaPad'
 
@@ -15,6 +17,7 @@ export default function Estancia() {
   const [firmaLista, setFirmaLista] = useState(false)
   const [resultado, setResultado] = useState(null)
   const [cargando, setCargando] = useState(false)
+  const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false)
   const firmaRef = useRef(null)
 
   async function cargarActivos() {
@@ -64,6 +67,11 @@ export default function Estancia() {
       <p style={{ color: 'var(--ink-muted)', marginTop: '-0.5rem' }}>
         Registra la llegada del alumno y, al retirarlo, captura quién lo recoge y su firma.
       </p>
+
+      {tienePermiso(user, 'estancia.carga_masiva') && <div style={{ marginBottom:'1rem' }}>
+        <button className="btn btn-outline" onClick={() => setMostrarCargaMasiva(v => !v)}>📦 {mostrarCargaMasiva ? 'Ocultar carga masiva' : 'Carga masiva'}</button>
+        {mostrarCargaMasiva && <div style={{ marginTop:'0.8rem' }}><CargaMasivaServicios tipo="estancia" /></div>}
+      </div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: retirando ? '1fr 1fr' : '1fr', gap: '1.5rem', alignItems: 'start' }}>
         <div>
