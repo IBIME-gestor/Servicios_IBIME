@@ -13,7 +13,6 @@ const VACIO = {
   nombre: '',
   tipo: 'desayuno',
   monto: '',
-  diasHabilesIncluidos: 20,
   descripcion: '',
   activo: true,
 }
@@ -58,7 +57,6 @@ export default function PlanesComedorTab() {
       nombre: plan.nombre || '',
       tipo: plan.tipo || 'desayuno',
       monto: plan.monto ?? '',
-      diasHabilesIncluidos: plan.diasHabilesIncluidos ?? 20,
       descripcion: plan.descripcion || '',
       activo: plan.activo !== false,
     })
@@ -76,10 +74,8 @@ export default function PlanesComedorTab() {
     e.preventDefault()
     setError('')
     const monto = Number(form.monto)
-    const dias = Number(form.diasHabilesIncluidos)
     if (!form.nombre.trim()) return setError('Captura el nombre del plan.')
     if (!Number.isFinite(monto) || monto <= 0) return setError('Captura un precio válido.')
-    if (!Number.isInteger(dias) || dias < 0) return setError('Captura una cantidad válida de días hábiles.')
 
     setGuardando(true)
     try {
@@ -123,7 +119,7 @@ export default function PlanesComedorTab() {
         <div>
           <h2 style={{ margin: 0 }}>🍽️ Planes de comedor</h2>
           <p style={{ margin: '0.35rem 0 0', color: 'var(--ink-muted)' }}>
-            Catálogo de planes que después puedes asignar a los alumnos desde Caja.
+            Catálogo de precios. Al asignarlo a un alumno, el sistema calcula automáticamente los días de lunes a viernes del mes y descuenta las vacaciones configuradas.
           </p>
         </div>
         <button className="btn btn-primary" onClick={abrirNuevo}>+ Nuevo plan</button>
@@ -138,7 +134,6 @@ export default function PlanesComedorTab() {
             <label><span>Nombre del plan</span><input className="input" value={form.nombre} placeholder="Ej. Desayuno mensual" onChange={e => setForm({ ...form, nombre: e.target.value })} /></label>
             <label><span>Concepto</span><select className="input" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>{TIPOS_PLAN_COMEDOR.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></label>
             <label><span>Precio</span><input className="input" type="number" min="0" step="0.01" value={form.monto} placeholder="0.00" onChange={e => setForm({ ...form, monto: e.target.value })} /></label>
-            <label><span>Días hábiles incluidos</span><input className="input" type="number" min="0" step="1" value={form.diasHabilesIncluidos} onChange={e => setForm({ ...form, diasHabilesIncluidos: e.target.value })} /></label>
           </div>
           <label style={{ display: 'block', marginTop: '0.8rem' }}><span>Descripción</span><textarea className="input" rows="3" value={form.descripcion} placeholder="Qué incluye el plan…" onChange={e => setForm({ ...form, descripcion: e.target.value })} /></label>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', marginTop: '0.8rem' }}><input type="checkbox" checked={form.activo} onChange={e => setForm({ ...form, activo: e.target.checked })} /> Plan activo</label>
@@ -159,7 +154,7 @@ export default function PlanesComedorTab() {
                 <div>
                   <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>{plan.nombre}</div>
                   <div style={{ color: 'var(--ink-muted)', fontSize: '0.8rem', marginTop: '0.2rem' }}>
-                    {plan.tipo === 'desayuno' ? '🍳 Desayuno' : '🍲 Comida'} · {plan.diasHabilesIncluidos || 0} días hábiles · {plan.activo === false ? 'Inactivo' : 'Activo'}
+                    {plan.tipo === 'desayuno' ? '🍳 Desayuno' : '🍲 Comida'} · {plan.activo === false ? 'Inactivo' : 'Activo'}
                   </div>
                   {plan.descripcion && <div style={{ marginTop: '0.45rem', fontSize: '0.85rem' }}>{plan.descripcion}</div>}
                 </div>
