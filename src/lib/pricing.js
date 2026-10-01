@@ -1,16 +1,14 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
-// Configuración por defecto de estancia. El administrador la edita desde
-// el módulo de Estancia > Configuración, y se guarda en
-// Firestore: config/estancia
 export const CONFIG_ESTANCIA_DEFAULT = {
-  horaInicio: '14:00', // a partir de esta hora empieza a contar la estancia
-  minutosGracia: 15, // minutos gratis antes de empezar a cobrar
-  modoCobro: 'fraccion', // "fraccion" (cada X minutos) | "minuto" (por minuto exacto)
-  minutosPorFraccion: 15, // si modoCobro = "fraccion"
-  costoPorFraccion: 15, // $ por cada fracción de minutosPorFraccion
-  costoPorMinuto: 1, // $ por minuto, si modoCobro = "minuto"
+  horaInicio: '14:00',
+  minutosGracia: 0,
+  costo30Min: 0,
+  costo1Hora: 0,
+  mensual1Hora: 0,
+  mensual2Horas: 0,
+  mensual3Horas: 0,
 }
 
 export async function obtenerConfigEstancia() {
@@ -21,42 +19,54 @@ export async function obtenerConfigEstancia() {
 
 export async function guardarConfigEstancia(config) {
   const ref = doc(db, 'config', 'estancia')
-  await setDoc(ref, config, { merge: true })
+  await setDoc(ref, {
+    ...config,
+    minutosGracia: Number(config.minutosGracia || 0),
+    costo30Min: Number(config.costo30Min || 0),
+    costo1Hora: Number(config.costo1Hora || 0),
+    mensual1Hora: Number(config.mensual1Hora || 0),
+    mensual2Horas: Number(config.mensual2Horas || 0),
+    mensual3Horas: Number(config.mensual3Horas || 0),
+  }, { merge: true })
 }
 
 /**
- * Calcula el costo de una estancia.
- * @param {number} minutosTotales - minutos entre horaInicio (o llegada) y la hora de retiro
- * @param {object} config - CONFIG_ESTANCIA_DEFAULT o la cargada de Firestore
- * @returns {{minutosCobrables: number, costo: number, desglose: string}}
+ * Tarifa escalonada:
+ * 1-30 min = tarifa de 30 min.
+ * 31-60 min = 1 hora.
+ * Cada hora adicional suma la tarifa de 1 hora.
+ * El bloque sobrante de 1-30 min suma una tarifa de 30 min.
+ * Ej.: 1h25 = 1h + 30 min; 2h25 = 2h + 30 min.
  */
 export function calcularCostoEstancia(minutosTotales, config = CONFIG_ESTANCIA_DEFAULT) {
-  const minutosCobrables = Math.max(0, minutosTotales - config.minutosGracia)
-
+  const minutosCobrables = Math.max(0, Number(minutosTotales || 0) - Number(config.minutosGracia || 0))
   if (minutosCobrables === 0) {
     return { minutosCobrables: 0, costo: 0, desglose: 'Dentro del tiempo de gracia, sin costo.' }
   }
 
-  if (config.modoCobro === 'minuto') {
-    const costo = minutosCobrables * config.costoPorMinuto
-    return {
-      minutosCobrables,
-      costo,
-      desglose: `${minutosCobrables} min × $${config.costoPorMinuto} MXN/min = $${costo} MXN`,
-    }
-  }
+  const tarifa30 = Number(config.costo30Min || 0)
+  const tarifaHora = Number(config.costo1Hora || 0)
+  const horas = Math.floor(minutosCobrables / 60)
+  const resto = minutosCobrables % 60
+  const bloques30 = resto === 0 ? 0 : 1
+  const costo = (horas * tarifaHora) + (bloques30 * tarifa30)
 
-  // modo "fraccion": redondea hacia arriba a la siguiente fracción completa
-  const fracciones = Math.ceil(minutosCobrables / config.minutosPorFraccion)
-  const costo = fracciones * config.costoPorFraccion
-  return {
-    minutosCobrables,
-    costo,
-    desglose: `${fracciones} fracción(es) de ${config.minutosPorFraccion} min × $${config.costoPorFraccion} MXN = $${costo} MXN`,
-  }
+  const partes = []
+  if (horas) partes.push(`${horas} h × $${tarifaHora.toFixed(2)}`)
+  if (bloques30) partes.push(`30 min × $${tarifa30.toFixed(2)}`)
+  const desglose = `${minutosCobrables} min cobrables: ${partes.join(' + ')} = $${costo.toFixed(2)} MXN`
+
+  return { minutosCobrables, horas, bloques30, costo, desglose }
 }
 
-/** Minutos transcurridos entre dos objetos Date (o timestamps de Firestore ya convertidos a Date). */
+export function obtenerTarifaMensualEstancia(horas, config = CONFIG_ESTANCIA_DEFAULT) {
+  const h = Number(horas)
+  if (h === 1) return Number(config.mensual1Hora || 0)
+  if (h === 2) return Number(config.mensual2Horas || 0)
+  if (h === 3) return Number(config.mensual3Horas || 0)
+  return 0
+}
+
 export function minutosEntre(inicio, fin) {
   return Math.round((fin.getTime() - inicio.getTime()) / 60000)
 }
