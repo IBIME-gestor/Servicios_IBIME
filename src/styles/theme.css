@@ -106,3 +106,92 @@ a { color: var(--navy-500); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ===== Cafetería: captura diaria y responsive ===== */
+.cafeteria-page { width: 100%; min-width: 0; }
+.cafeteria-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.cafeteria-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 390px);
+  gap: 1.25rem;
+  align-items: start;
+}
+.cafeteria-captura { min-width: 0; }
+.cafeteria-search { width: min(100%, 520px); }
+.cafeteria-register-card { padding: 1.25rem; min-width: 0; }
+.cafeteria-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.cafeteria-selected-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.cafeteria-daily-card {
+  position: sticky;
+  top: 1rem;
+  padding: 1rem;
+  min-width: 0;
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+.cafeteria-daily-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.cafeteria-daily-header span { color: var(--ink-muted); font-size: 0.8rem; }
+.cafeteria-clear-btn { padding: 0.4rem 0.7rem; font-size: 0.82rem; }
+.cafeteria-daily-list { overflow-y: auto; min-height: 0; margin-top: 0.35rem; }
+.cafeteria-daily-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.cafeteria-daily-check {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--green-600) 14%, var(--surface));
+  color: var(--green-600);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.cafeteria-daily-info, .cafeteria-daily-service { min-width: 0; display: flex; flex-direction: column; }
+.cafeteria-daily-info strong, .cafeteria-daily-info span, .cafeteria-daily-service strong, .cafeteria-daily-service span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cafeteria-daily-info span, .cafeteria-daily-service span { color: var(--ink-muted); font-size: 0.76rem; }
+.cafeteria-daily-service { text-align: right; }
+.cafeteria-empty-list { padding: 1.5rem 0.5rem; text-align: center; color: var(--ink-muted); }
+.cafeteria-empty-list > span { font-size: 1.6rem; }
+.cafeteria-empty-list p { margin: 0.5rem 0 0.35rem; color: var(--ink); font-size: 0.9rem; }
+.cafeteria-empty-list small { display: block; line-height: 1.4; }
+
+@media (max-width: 980px) {
+  .cafeteria-layout { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 1rem; }
+}
+
+@media (max-width: 760px) {
+  .cafeteria-header { flex-direction: column; }
+  .cafeteria-header > .btn { width: 100%; justify-content: center; }
+  .cafeteria-layout { grid-template-columns: 1fr; }
+  .cafeteria-daily-card { position: static; max-height: none; order: 3; }
+  .cafeteria-daily-list { max-height: 420px; }
+}
+
+@media (max-width: 480px) {
+  .cafeteria-actions { display: grid; grid-template-columns: 1fr; }
+  .cafeteria-actions .btn { width: 100%; justify-content: center; }
+  .cafeteria-selected-row { align-items: stretch; flex-direction: column; }
+  .cafeteria-selected-row .btn { width: 100%; justify-content: center; }
+  .cafeteria-daily-item { grid-template-columns: auto minmax(0, 1fr); }
+  .cafeteria-daily-service { grid-column: 2; text-align: left; flex-direction: row; gap: 0.5rem; align-items: baseline; }
+}
