@@ -13,7 +13,7 @@ function horaObj(value) { const [h,m] = value.split(':').map(Number); return { h
 
 export default function CargaMasivaServicios({ tipo = 'comedor' }) {
   const { user } = useAuth()
-  const permiso = tipo === 'comedor' ? 'caja.carga_masiva' : 'estancia.carga_masiva'
+  const permiso = tipo === 'comedor' ? 'cafeteria.carga_masiva' : 'estancia.carga_masiva'
   const [alumnos, setAlumnos] = useState([])
   const [texto, setTexto] = useState('')
   const [seleccionados, setSeleccionados] = useState([])
@@ -29,7 +29,7 @@ export default function CargaMasivaServicios({ tipo = 'comedor' }) {
   useEffect(() => { listarAlumnosActivos().then(setAlumnos).catch(e => setError(e.message || 'No se pudo cargar alumnos.')) }, [])
   const sugerencias = useMemo(() => filtrarAlumnos(alumnos, texto).filter(a => !seleccionados.some(x => x.id === a.id)), [alumnos, texto, seleccionados])
 
-  if (!tienePermiso(user, permiso) && !tienePermiso(user, 'admin.carga_retroactiva')) return null
+  if (!tienePermiso(user, permiso) && !tienePermiso(user, 'caja.carga_masiva') && !tienePermiso(user, 'admin.carga_retroactiva')) return null
 
   function agregar(a) { setSeleccionados(prev => [...prev, a]); setTexto('') }
   function quitar(id) { setSeleccionados(prev => prev.filter(a => a.id !== id)) }
