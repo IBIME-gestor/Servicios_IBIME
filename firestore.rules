@@ -40,18 +40,27 @@ service cloud.firestore {
     // crear; cualquiera con sesión puede leer (lo usan caja y cafetería).
     match /consumos/{consumoId} {
       allow read: if estaAutenticado();
-      allow create: if tengoPermiso('cafeteria.registrar');
+      allow create: if tengoPermiso('cafeteria.registrar') || tengoPermiso('cafeteria.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva');
       allow update: if esAdmin() || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']) && (!request.resource.data.pagado || request.resource.data.cargado));
       allow delete: if esAdmin();
     }
 
-    // Estancias: solo quien tenga estancia.registrar puede crear/actualizar
+    // Estancias: captura normal, carga masiva o carga administrativa pueden crear/actualizar
     // (llegada y retiro); cualquiera con sesión puede leer (lo usa caja).
     match /estancias/{estanciaId} {
       allow read: if estaAutenticado();
-      allow create: if tengoPermiso('estancia.registrar');
-      allow update: if tengoPermiso('estancia.registrar') || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']));
+      allow create: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva');
+      allow update: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva') || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']));
       allow delete: if esAdmin();
+    }
+
+
+    // Mensualidades/planes asignados a alumnos. Caja puede asignarlos con
+    // el permiso específico; administración conserva control del catálogo.
+    match /planes_comedor/{planId} {
+      allow read: if estaAutenticado();
+      allow create, update: if tengoPermiso('caja.asignar_plan_comedor') || tengoPermiso('admin.planes_comedor');
+      allow delete: if esAdmin() || tengoPermiso('caja.asignar_plan_comedor');
     }
 
     // Catálogo de planes de comedor.
@@ -64,7 +73,7 @@ service cloud.firestore {
 
     match /config/{docId} {
       allow read: if estaAutenticado();
-      allow write: if (docId == 'notificaciones' && tengoPermiso('admin.notificaciones')) || tengoPermiso('admin.config_estancia') || tengoPermiso('admin.config_comedor');
+      allow write: if (docId == 'notificaciones' && tengoPermiso('admin.notificaciones')) || tengoPermiso('admin.config_estancia') || tengoPermiso('admin.config_comedor') || (docId == 'calendario' && tengoPermiso('admin.calendario_comedor'));
     }
 
     // Registro semanal de cobro por alumno (casillas de "capturado" y
