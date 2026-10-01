@@ -1,123 +1,58 @@
 import { useEffect, useState } from 'react'
 import { CONFIG_ESTANCIA_DEFAULT, obtenerConfigEstancia, guardarConfigEstancia, calcularCostoEstancia } from '../../lib/pricing'
 
+const dinero = (n) => `$${Number(n || 0).toFixed(2)} MXN`
+
 export default function ConfigEstanciaTab() {
   const [config, setConfig] = useState(CONFIG_ESTANCIA_DEFAULT)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
 
-  useEffect(() => {
-    obtenerConfigEstancia().then(setConfig)
-  }, [])
+  useEffect(() => { obtenerConfigEstancia().then(setConfig) }, [])
 
   async function handleGuardar(e) {
     e.preventDefault()
-    setGuardando(true)
-    setGuardado(false)
-    try {
-      await guardarConfigEstancia(config)
-      setGuardado(true)
-    } finally {
-      setGuardando(false)
-    }
+    setGuardando(true); setGuardado(false)
+    try { await guardarConfigEstancia(config); setGuardado(true) } finally { setGuardando(false) }
   }
 
-  const ejemplo60 = calcularCostoEstancia(60, config)
-  const ejemplo90 = calcularCostoEstancia(90, config)
+  const ejemplos = [30, 60, 75, 90, 125].map(min => ({ min, ...calcularCostoEstancia(min, config) }))
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '2rem', alignItems: 'start', maxWidth: 900 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '390px 1fr', gap: '1.25rem', alignItems: 'start' }}>
       <form onSubmit={handleGuardar} className="card" style={{ padding: '1.25rem' }}>
-        <h3 style={{ marginTop: 0 }}>Tarifas de estancia</h3>
+        <h3 style={{ marginTop: 0 }}>🏫 Tarifas de estancia</h3>
+        <p style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>El cálculo se hace por bloques: hasta 30 min, después horas completas y un bloque final de 30 min cuando corresponda.</p>
 
-        <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>
-          Hora en que inicia la estancia escolar
-        </label>
-        <input
-          className="input"
-          type="time"
-          value={config.horaInicio}
-          onChange={(e) => setConfig({ ...config, horaInicio: e.target.value })}
-          style={{ marginBottom: '0.9rem' }}
-        />
+        <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Hora en que inicia la estancia escolar</label>
+        <input className="input" type="time" value={config.horaInicio} onChange={e => setConfig({ ...config, horaInicio: e.target.value })} style={{ marginBottom: '0.8rem' }} />
 
-        <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>
-          Minutos de gracia (sin costo)
-        </label>
-        <input
-          className="input"
-          type="number"
-          min={0}
-          value={config.minutosGracia}
-          onChange={(e) => setConfig({ ...config, minutosGracia: Number(e.target.value) })}
-          style={{ marginBottom: '0.9rem' }}
-        />
+        <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Minutos de gracia</label>
+        <input className="input" type="number" min={0} value={config.minutosGracia} onChange={e => setConfig({ ...config, minutosGracia: Number(e.target.value) })} style={{ marginBottom: '0.8rem' }} />
 
-        <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Modo de cobro</label>
-        <select
-          className="input"
-          value={config.modoCobro}
-          onChange={(e) => setConfig({ ...config, modoCobro: e.target.value })}
-          style={{ marginBottom: '0.9rem' }}
-        >
-          <option value="fraccion">Por fracción de tiempo (ej. cada 30 min)</option>
-          <option value="minuto">Por minuto exacto</option>
-        </select>
+        <Tarifa label="Estancia de 1 a 30 minutos" value={config.costo30Min} onChange={v => setConfig({ ...config, costo30Min: Number(v) })} />
+        <Tarifa label="Estancia por 1 hora" value={config.costo1Hora} onChange={v => setConfig({ ...config, costo1Hora: Number(v) })} />
 
-        {config.modoCobro === 'fraccion' ? (
-          <>
-            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Minutos por fracción</label>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              value={config.minutosPorFraccion}
-              onChange={(e) => setConfig({ ...config, minutosPorFraccion: Number(e.target.value) })}
-              style={{ marginBottom: '0.9rem' }}
-            />
-            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Costo por fracción (MXN)</label>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              value={config.costoPorFraccion}
-              onChange={(e) => setConfig({ ...config, costoPorFraccion: Number(e.target.value) })}
-              style={{ marginBottom: '0.9rem' }}
-            />
-          </>
-        ) : (
-          <>
-            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Costo por minuto (MXN)</label>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              value={config.costoPorMinuto}
-              onChange={(e) => setConfig({ ...config, costoPorMinuto: Number(e.target.value) })}
-              style={{ marginBottom: '0.9rem' }}
-            />
-          </>
-        )}
+        <h4 style={{ marginBottom: '0.6rem' }}>Mensualidades</h4>
+        <Tarifa label="Estancia mensual por 1 hora diaria" value={config.mensual1Hora} onChange={v => setConfig({ ...config, mensual1Hora: Number(v) })} />
+        <Tarifa label="Estancia mensual por 2 horas diarias" value={config.mensual2Horas} onChange={v => setConfig({ ...config, mensual2Horas: Number(v) })} />
+        <Tarifa label="Estancia mensual por 3 horas diarias" value={config.mensual3Horas} onChange={v => setConfig({ ...config, mensual3Horas: Number(v) })} />
 
-        <button className="btn btn-primary" disabled={guardando} type="submit" style={{ width: '100%', justifyContent: 'center' }}>
-          {guardando ? 'Guardando…' : 'Guardar configuración'}
-        </button>
-        {guardado && <p style={{ color: 'var(--green-600)', fontSize: '0.85rem', marginTop: '0.6rem' }}>Guardado ✓</p>}
+        <button className="btn btn-primary" disabled={guardando} type="submit" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}>{guardando ? 'Guardando…' : 'Guardar configuración'}</button>
+        {guardado && <p style={{ color: 'var(--green-600)', fontSize: '0.85rem', marginBottom: 0 }}>Guardado ✓</p>}
       </form>
 
       <div className="card" style={{ padding: '1.25rem' }}>
-        <h3 style={{ marginTop: 0 }}>Vista previa del cálculo</h3>
-        <p style={{ fontSize: '0.9rem' }}>
-          Alumno con <strong>60 minutos</strong> en estancia: <strong>${ejemplo60.costo}</strong>
-          <br />
-          <span style={{ color: 'var(--ink-muted)', fontSize: '0.85rem' }}>{ejemplo60.desglose}</span>
-        </p>
-        <p style={{ fontSize: '0.9rem' }}>
-          Alumno con <strong>90 minutos</strong> en estancia: <strong>${ejemplo90.costo}</strong>
-          <br />
-          <span style={{ color: 'var(--ink-muted)', fontSize: '0.85rem' }}>{ejemplo90.desglose}</span>
-        </p>
+        <h3 style={{ marginTop: 0 }}>Vista previa</h3>
+        {ejemplos.map(e => <div key={e.min} style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--border)' }}><strong>{e.min} minutos</strong><div style={{ fontSize: '0.9rem' }}>{dinero(e.costo)}</div><div style={{ color: 'var(--ink-muted)', fontSize: '0.8rem' }}>{e.desglose}</div></div>)}
+        <div style={{ marginTop: '1rem', padding: '0.8rem', background: 'var(--surface-sunken)', borderRadius: 8, fontSize: '0.82rem' }}>
+          <strong>Ejemplo solicitado:</strong> 1 h 25 min se cobra como <strong>1 hora + 30 minutos</strong>. 2 h 25 min = 2 horas + 30 minutos.
+        </div>
       </div>
     </div>
   )
+}
+
+function Tarifa({ label, value, onChange }) {
+  return <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.8rem' }}>{label}<input className="input" type="number" min={0} step="0.01" value={value ?? 0} onChange={e => onChange(e.target.value)} style={{ marginTop: '0.3rem' }} /></label>
 }
