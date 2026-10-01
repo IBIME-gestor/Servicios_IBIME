@@ -18,6 +18,9 @@ import { marcarDetalleCobro } from '../../lib/cobros'
 import { listarPlanesComedor } from '../../lib/planesComedor'
 import { db } from '../../firebase'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
+import { obtenerCalendario, contarDiasHabiles, esDiaHabil, rangoMes, fechaISO } from '../../lib/calendario'
+import { tienePermiso } from '../../lib/permisos'
+import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 
 const dinero = (n) => `$${Number(n || 0).toFixed(2)} MXN`
 
@@ -47,18 +50,6 @@ function parseInputDate(value, end = false) {
   return end ? finDelDia(date) : inicioDelDia(date)
 }
 
-function contarDiasHabiles(inicio, fin) {
-  let total = 0
-  const d = inicioDelDia(inicio)
-  const ultimo = inicioDelDia(fin)
-  while (d <= ultimo) {
-    const dia = d.getDay()
-    if (dia !== 0 && dia !== 6) total += 1
-    d.setDate(d.getDate() + 1)
-  }
-  return total
-}
-
 function solapaRango(plan, inicio, fin) {
   const a = plan.fechaInicio?.toDate ? plan.fechaInicio.toDate() : new Date(plan.fechaInicio)
   const b = plan.fechaFin?.toDate ? plan.fechaFin.toDate() : new Date(plan.fechaFin)
@@ -78,6 +69,18 @@ async function cargarConsumosRango(inicio, fin) {
     ...d.data(),
     fecha: d.data().fecha?.toDate ? d.data().fecha.toDate() : null,
   }))
+}
+
+async function cargarConsumosMesAlumno(alumnoId, inicioMes, finMes) {
+  const q = query(
+    collection(db, 'consumos'),
+    where('alumnoId', '==', alumnoId),
+    where('fecha', '>=', Timestamp.fromDate(inicioMes)),
+    where('fecha', '<=', Timestamp.fromDate(finMes)),
+    orderBy('fecha', 'desc')
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...d.data(), fecha: d.data().fecha?.toDate ? d.data().fecha.toDate() : null }))
 }
 
 async function cargarEstanciasRango(inicio, fin) {
@@ -105,10 +108,12 @@ async function cargarPlanesAlumno(alumnoId) {
 export default function Caja() {
   const { user } = useAuth()
   const hoy = new Date()
-  const [fechaDesde, setFechaDesde] = useState(fechaInput(inicioDelDia(hoy)))
-  const [fechaHasta, setFechaHasta] = useState(fechaInput(finDelDia(hoy)))
+  const mesActual = rangoMes(hoy)
+  const [fechaDesde, setFechaDesde] = useState(fechaInput(mesActual.inicio))
+  const [fechaHasta, setFechaHasta] = useState(fechaInput(mesActual.fin))
   const [alumnos, setAlumnos] = useState([])
   const [consumos, setConsumos] = useState([])
+  const [consumosMesPlan, setConsumosMesPlan] = useState([])
   const [estancias, setEstancias] = useState([])
   const [configComedor, setConfigComedor] = useState(null)
   const [catalogoPlanes, setCatalogoPlanes] = useState([])
@@ -121,7 +126,9 @@ export default function Caja() {
   const [guardando, setGuardando] = useState('')
   const [error, setError] = useState('')
   const [mostrarMensualidad, setMostrarMensualidad] = useState(false)
-  const [formMensualidad, setFormMensualidad] = useState({ tipo: 'desayuno', desde: fechaInput(hoy), hasta: fechaInput(hoy), monto: '', planCatalogoId: '' })
+  const [calendario, setCalendario] = useState({ vacaciones: [] })
+  const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false)
+  const [formMensualidad, setFormMensualidad] = useState({ tipo: 'desayuno', monto: '', planCatalogoId: '' })
 
   const inicio = useMemo(() => parseInputDate(fechaDesde, false), [fechaDesde])
   const fin = useMemo(() => parseInputDate(fechaHasta, true), [fechaHasta])
@@ -134,21 +141,25 @@ export default function Caja() {
     setCargando(true)
     setError('')
     try {
-      const [a, c, e, cfg, cfgPlanes] = await Promise.all([
+      const [a, c, e, cfg, cfgPlanes, cfgCalendario] = await Promise.all([
         listarAlumnosActivos(),
         cargarConsumosRango(inicio, fin),
         cargarEstanciasRango(inicio, fin),
         obtenerConfigComedor(),
         listarPlanesComedor(),
+        obtenerCalendario(),
       ])
       setAlumnos(a)
       setConsumos(c)
       setEstancias(e.filter((x) => x.horaSalida))
       setConfigComedor(cfg)
       setCatalogoPlanes(cfgPlanes.filter((p) => p.activo !== false))
+      setCalendario(cfgCalendario || { vacaciones: [] })
       if (seleccionadoId) {
         const p = await cargarPlanesAlumno(seleccionadoId)
         setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
+        const mes = rangoMes(new Date())
+        setConsumosMesPlan(await cargarConsumosMesAlumno(seleccionadoId, mes.inicio, mes.fin))
       }
     } catch (err) {
       console.error(err)
@@ -181,6 +192,8 @@ export default function Caja() {
     try {
       const p = await cargarPlanesAlumno(a.id)
       setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
+      const mes = rangoMes(new Date())
+      setConsumosMesPlan(await cargarConsumosMesAlumno(a.id, mes.inicio, mes.fin))
     } catch (err) {
       console.error(err)
       setError(err?.message || 'No fue posible cargar las mensualidades del alumno.')
@@ -242,36 +255,35 @@ export default function Caja() {
   async function crearMensualidad(e) {
     e.preventDefault()
     if (!seleccionado) return
-    const desde = parseInputDate(formMensualidad.desde, false)
-    const hasta = parseInputDate(formMensualidad.hasta, true)
-    if (desde > hasta) return setError('La fecha inicial de la mensualidad no puede ser posterior a la final.')
-    const diasHabiles = contarDiasHabiles(desde, hasta)
-    const planCatalogo = catalogoPlanes.find((p) => p.id === formMensualidad.planCatalogoId) || null
-    const tipo = planCatalogo?.tipo || formMensualidad.tipo
-    const monto = Number(planCatalogo?.monto ?? formMensualidad.monto)
-    if (!Number.isFinite(monto) || monto <= 0) return setError('Captura o selecciona un monto mensual válido.')
-
     setGuardando('nueva-mensualidad')
     setError('')
     try {
+      const planCatalogo = catalogoPlanes.find((p) => p.id === formMensualidad.planCatalogoId) || null
+      const tipo = planCatalogo?.tipo || formMensualidad.tipo
+      const monto = Number(planCatalogo?.monto ?? formMensualidad.monto)
+      if (!Number.isFinite(monto) || monto <= 0) throw new Error('Captura o selecciona un monto mensual válido.')
+
+      const mes = rangoMes(new Date())
+      const diasHabiles = contarDiasHabiles(mes.inicio, mes.fin, calendario.vacaciones || [])
+      const fechaInicio = Timestamp.fromDate(mes.inicio)
+      const fechaFin = Timestamp.fromDate(mes.fin)
+      const mesClave = fechaISO(mes.inicio).slice(0, 7)
       const existentes = await cargarPlanesAlumno(seleccionado.id)
-      const existeSolapado = existentes.some((p) => {
-        if (p.tipo !== tipo || p.activo === false) return false
-        return solapaRango(p, desde, hasta)
-      })
-      if (existeSolapado) throw new Error(`Ya existe una mensualidad activa de ${tipo} que se cruza con ese periodo.`)
+      const existeSolapado = existentes.some(p => p.tipo === tipo && p.mesClave === mesClave && p.activo !== false)
+      if (existeSolapado) throw new Error(`Ya existe una mensualidad activa de ${tipo} para ${mesClave}.`)
 
       await addDoc(collection(db, 'planes_comedor'), {
         alumnoId: seleccionado.id,
         alumnoNombre: seleccionado.nombre,
         tipo,
+        monto,
         planCatalogoId: planCatalogo?.id || null,
         planCatalogoNombre: planCatalogo?.nombre || null,
-        fechaInicio: Timestamp.fromDate(desde),
-        fechaFin: Timestamp.fromDate(hasta),
+        fechaInicio,
+        fechaFin,
+        mesClave,
         diasHabiles,
-        monto,
-        serviciosUtilizados: 0,
+        vacacionesAplicadas: calendario.vacaciones || [],
         activo: true,
         cargado: true,
         pagado: false,
@@ -280,8 +292,10 @@ export default function Caja() {
       })
       const p = await cargarPlanesAlumno(seleccionado.id)
       setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
+      const consumosMes = await cargarConsumosMesAlumno(seleccionado.id, mes.inicio, mes.fin)
+      setConsumosMesPlan(consumosMes)
       setMostrarMensualidad(false)
-      setFormMensualidad({ tipo: 'desayuno', desde: fechaInput(inicio), hasta: fechaInput(fin), monto: '', planCatalogoId: '' })
+      setFormMensualidad({ tipo: 'desayuno', monto: '', planCatalogoId: '' })
     } catch (err) {
       console.error(err)
       setError(err?.message || 'No fue posible crear la mensualidad.')
@@ -331,6 +345,11 @@ export default function Caja() {
 
       {error && <div className="card" style={{ padding: '0.8rem 1rem', marginBottom: '1rem', border: '1px solid #ef4444', color: '#b91c1c' }}>⚠️ {error}</div>}
 
+      {tienePermiso(user, 'caja.carga_masiva') && <div style={{ marginBottom: '1rem' }}>
+        <button className="btn btn-outline" onClick={() => setMostrarCargaMasiva(v => !v)}>📦 {mostrarCargaMasiva ? 'Ocultar carga masiva' : 'Carga masiva'}</button>
+        {mostrarCargaMasiva && <div style={{ marginTop: '0.8rem' }}><CargaMasivaServicios tipo="comedor" /></div>}
+      </div>}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '0.7rem', marginBottom: '1.25rem' }}>
         <Kpi titulo="Alumnos" valor={alumnos.length} />
         <Kpi titulo="Con comedor" valor={actividad.filter(a => a.cafeteria.length).length} />
@@ -374,7 +393,7 @@ export default function Caja() {
         <div className="card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
             <div><h2 style={{ margin: 0 }}>{seleccionado.nombre}</h2><span style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>{seleccionado.grado} {seleccionado.grupo} · {seleccionado.matricula} · {seleccionado.correoAlumno || 'sin correo alumno'}</span></div>
-            <button className="btn btn-outline" onClick={() => { setSeleccionadoId(null); setPlanes([]) }}>Cerrar</button>
+            <button className="btn btn-outline" onClick={() => { setSeleccionadoId(null); setPlanes([]); setConsumosMesPlan([]) }}>Cerrar</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1.25rem' }}>
@@ -392,20 +411,18 @@ export default function Caja() {
           <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
               <div><strong>🍽️ Mensualidades de comedor</strong><div style={{ fontSize: '0.76rem', color: 'var(--ink-muted)' }}>Desayuno y comida son conceptos independientes.</div></div>
-              <button className="btn btn-outline" onClick={() => setMostrarMensualidad(v => !v)}>+ {mostrarMensualidad ? 'Cerrar' : 'Registrar mensualidad'}</button>
+              {tienePermiso(user, 'caja.asignar_plan_comedor') && <button className="btn btn-outline" onClick={() => setMostrarMensualidad(v => !v)}>+ {mostrarMensualidad ? 'Cerrar' : 'Registrar mensualidad'}</button>}
             </div>
 
-            {[...planesDesayuno, ...planesComida].map(plan => <PlanMensual key={plan.id} plan={plan} consumos={cafeteriaSeleccionada} cambiarEstado={cambiarEstadoMensualidad} guardando={guardando} />)}
+            {[...planesDesayuno, ...planesComida].map(plan => <PlanMensual key={plan.id} plan={plan} consumos={consumosMesPlan} vacaciones={calendario.vacaciones || []} cambiarEstado={cambiarEstadoMensualidad} guardando={guardando} puedeGestionar={tienePermiso(user, 'caja.asignar_plan_comedor')} />)}
 
             {mostrarMensualidad && <form onSubmit={crearMensualidad} className="card" style={{ marginTop: '0.8rem', padding: '1rem', background: 'var(--surface-sunken)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '0.7rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '0.7rem' }}>
                 <label><span>Plan del catálogo</span><select className="input" value={formMensualidad.planCatalogoId} onChange={e => { const id = e.target.value; const p = catalogoPlanes.find(x => x.id === id); setFormMensualidad({ ...formMensualidad, planCatalogoId: id, tipo: p?.tipo || formMensualidad.tipo, monto: p?.monto ?? formMensualidad.monto }) }}><option value="">Captura manual</option>{catalogoPlanes.map(p => <option key={p.id} value={p.id}>{p.nombre} · ${Number(p.monto || 0).toFixed(2)}</option>)}</select></label>
                 <label><span>Concepto</span><select className="input" value={formMensualidad.tipo} disabled={Boolean(formMensualidad.planCatalogoId)} onChange={e => setFormMensualidad({ ...formMensualidad, tipo: e.target.value })}><option value="desayuno">Desayuno</option><option value="comida">Comida</option></select></label>
-                <label><span>Desde</span><input className="input" type="date" value={formMensualidad.desde} onChange={e => setFormMensualidad({ ...formMensualidad, desde: e.target.value })}/></label>
-                <label><span>Hasta</span><input className="input" type="date" value={formMensualidad.hasta} onChange={e => setFormMensualidad({ ...formMensualidad, hasta: e.target.value })}/></label>
                 <label><span>Monto mensual</span><input className="input" type="number" min="0" step="0.01" value={formMensualidad.monto} readOnly={Boolean(formMensualidad.planCatalogoId)} placeholder="0.00" onChange={e => setFormMensualidad({ ...formMensualidad, monto: e.target.value })}/></label>
               </div>
-              <div style={{ marginTop: '0.7rem', fontSize: '0.78rem', color: 'var(--ink-muted)' }}>Días hábiles calculados: <strong>{contarDiasHabiles(parseInputDate(formMensualidad.desde), parseInputDate(formMensualidad.hasta, true))}</strong>. El contador de uso será por servicio: desayuno 1/24, 2/24… y comida 1/24, 2/24… de manera independiente.</div>
+              <div style={{ marginTop: '0.7rem', fontSize: '0.78rem', color: 'var(--ink-muted)' }}>Periodo automático: <strong>{fechaInput(mesActual.inicio)} → {fechaInput(mesActual.fin)}</strong> · días de consumo: <strong>{contarDiasHabiles(mesActual.inicio, mesActual.fin, calendario.vacaciones || [])}</strong>. No necesitas configurar manualmente el número de días.</div>
               <button className="btn btn-primary" disabled={guardando === 'nueva-mensualidad'} style={{ marginTop: '0.8rem' }}>{guardando === 'nueva-mensualidad' ? 'Guardando…' : 'Guardar mensualidad'}</button>
             </form>}
           </div>
@@ -428,11 +445,11 @@ function Mini({ titulo, valor }) { return <div style={{ padding: '0.75rem', bord
 function Modulo({ titulo, total, detalle, activo, onClick }) { return <button onClick={onClick} className="card" style={{ padding: '1rem', textAlign: 'left', cursor: 'pointer', border: `2px solid ${activo ? 'var(--red-600)' : 'var(--border)'}`, background: activo ? 'var(--surface-sunken)' : 'var(--surface)' }}><div style={{ fontWeight: 800 }}>{titulo}</div><div style={{ fontSize: '1.35rem', marginTop: '0.3rem' }}>{dinero(total)}</div><div style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>{detalle} · {activo ? 'ocultar detalle' : 'ver detalle'}</div></button> }
 function Check({ label, checked, disabled, onChange }) { return <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', opacity: disabled ? 0.5 : 1 }}><input type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={e => onChange(e.target.checked)} />{label}</label> }
 
-function PlanMensual({ plan, consumos, cambiarEstado, guardando }) {
+function PlanMensual({ plan, consumos, vacaciones, cambiarEstado, guardando, puedeGestionar }) {
   const inicio = plan.fechaInicio?.toDate ? plan.fechaInicio.toDate() : new Date(plan.fechaInicio)
   const fin = plan.fechaFin?.toDate ? plan.fechaFin.toDate() : new Date(plan.fechaFin)
-  const usados = consumos.filter(c => c.tipo === plan.tipo && c.fecha && c.fecha >= inicio && c.fecha <= fin).length
-  const dias = Number(plan.diasHabiles || 0)
+  const usados = new Set(consumos.filter(c => c.tipo === plan.tipo && c.fecha && c.fecha >= inicio && c.fecha <= fin && esDiaHabil(c.fecha, vacaciones || [])).map(c => fechaISO(c.fecha))).size
+  const dias = contarDiasHabiles(inicio, fin, vacaciones || [])
   return <div style={{ marginTop: '0.65rem', padding: '0.8rem', border: '1px solid var(--border)', borderRadius: 10 }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
       <div><strong>{plan.tipo === 'desayuno' ? '🍳 Desayuno mensual' : '🍲 Comida mensual'}</strong><div style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>{formatoFecha(inicio)} → {formatoFecha(fin)} · {dias} días hábiles</div></div>
@@ -440,8 +457,8 @@ function PlanMensual({ plan, consumos, cambiarEstado, guardando }) {
     </div>
     <div style={{ marginTop: '0.65rem' }}><strong>{usados} / {dias}</strong> servicios utilizados · {Math.max(dias - usados, 0)} restantes</div>
     <div style={{ display: 'flex', gap: '1rem', marginTop: '0.65rem', flexWrap: 'wrap' }}>
-      <Check label="Cargado" checked={plan.cargado} disabled={guardando === `planes_comedor-${plan.id}-cargado`} onChange={v => cambiarEstado(plan.id, 'cargado', v)} />
-      <Check label="Pagado" checked={plan.pagado} disabled={!plan.cargado || guardando === `planes_comedor-${plan.id}-pagado`} onChange={v => cambiarEstado(plan.id, 'pagado', v)} />
+      <Check label="Cargado" checked={plan.cargado} disabled={!puedeGestionar || guardando === `planes_comedor-${plan.id}-cargado`} onChange={v => cambiarEstado(plan.id, 'cargado', v)} />
+      <Check label="Pagado" checked={plan.pagado} disabled={!puedeGestionar || !plan.cargado || guardando === `planes_comedor-${plan.id}-pagado`} onChange={v => cambiarEstado(plan.id, 'pagado', v)} />
       {plan.pagado ? <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>✓ Mensualidad pagada. Los consumos de {plan.tipo} dentro del periodo quedan cubiertos.</span> : <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>⚠️ Mensualidad activa y aún pendiente de pago. No se generan cargos individuales para este concepto.</span>}
     </div>
   </div>
