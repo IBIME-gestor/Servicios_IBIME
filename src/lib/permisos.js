@@ -17,6 +17,7 @@ export const CATALOGO_PERMISOS = [
     permisos: [
       { clave: 'cafeteria.ver', etiqueta: 'Entrar al módulo de cafetería', descripcion: '' },
       { clave: 'cafeteria.registrar', etiqueta: 'Registrar desayuno/comida', descripcion: '' },
+      { clave: 'cafeteria.carga_masiva', etiqueta: 'Carga masiva de comedor', descripcion: 'Permite cargar varios alumnos de una fecha en una sola operación.' },
     ],
   },
   {
@@ -24,12 +25,15 @@ export const CATALOGO_PERMISOS = [
     permisos: [
       { clave: 'estancia.ver', etiqueta: 'Entrar al módulo de estancia', descripcion: '' },
       { clave: 'estancia.registrar', etiqueta: 'Registrar llegadas y retiros', descripcion: '' },
+      { clave: 'estancia.carga_masiva', etiqueta: 'Carga masiva de estancia', descripcion: 'Permite cargar estancias de varios alumnos de una fecha en una sola operación.' },
     ],
   },
   {
     grupo: 'Caja',
     permisos: [
       { clave: 'caja.ver', etiqueta: 'Ver concentrado semanal de caja', descripcion: '' },
+      { clave: 'caja.carga_masiva', etiqueta: 'Carga masiva desde Caja', descripcion: 'Permite usar la carga masiva sin conceder acceso al módulo de Administración.' },
+      { clave: 'caja.asignar_plan_comedor', etiqueta: 'Asignar planes de comedor', descripcion: 'Permite asignar mensualidades de comedor a un alumno desde Caja.' },
     ],
   },
   {
@@ -40,6 +44,7 @@ export const CATALOGO_PERMISOS = [
       { clave: 'admin.config_estancia', etiqueta: 'Configurar tarifas de estancia', descripcion: '' },
       { clave: 'admin.config_comedor', etiqueta: 'Configurar precios de comedor', descripcion: '' },
       { clave: 'admin.planes_comedor', etiqueta: 'Gestionar planes de comedor', descripcion: 'Crear, editar, activar y desactivar planes del catálogo de comedor.' },
+      { clave: 'admin.calendario_comedor', etiqueta: 'Configurar calendario y vacaciones', descripcion: 'Definir días de suspensión/vacaciones que se descuentan de los días de consumo.' },
       { clave: 'admin.pagos', etiqueta: 'Ver panel de pagos (estancia y cafetería)', descripcion: '' },
       { clave: 'admin.carga_retroactiva', etiqueta: 'Hacer cargas retroactivas de comedor y estancia', descripcion: 'Permite capturar servicios de una fecha y hora anteriores conservando la fecha real de captura.' },
       { clave: 'admin.notificaciones', etiqueta: 'Gestionar notificaciones semanales', descripcion: 'Cargar plantilla HTML y preparar envíos de resumen a padres/tutores.' },
