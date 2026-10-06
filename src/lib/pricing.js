@@ -70,3 +70,24 @@ export function obtenerTarifaMensualEstancia(horas, config = CONFIG_ESTANCIA_DEF
 export function minutosEntre(inicio, fin) {
   return Math.round((fin.getTime() - inicio.getTime()) / 60000)
 }
+
+/**
+ * Momento real a partir del cual empieza a correr la estancia.
+ * La configuración de horaInicio manda; si el alumno entró después,
+ * el conteo empieza en su entrada. Si entró antes, empieza en la hora escolar configurada.
+ */
+export function inicioEfectivoEstancia(horaEntrada, fecha, config = CONFIG_ESTANCIA_DEFAULT) {
+  const entrada = new Date(horaEntrada)
+  const inicio = new Date(fecha || entrada)
+  const [horas, minutos] = String(config.horaInicio || '00:00').split(':').map(Number)
+  inicio.setHours(Number.isFinite(horas) ? horas : 0, Number.isFinite(minutos) ? minutos : 0, 0, 0)
+  // El reloj de estancia comienza en la hora configurada, no al momento
+  // de pulsar "registrar". Si alguien entra antes, el tiempo no puede ser negativo.
+  return inicio
+}
+
+export function calcularMinutosEstancia(horaEntrada, ahora, config = CONFIG_ESTANCIA_DEFAULT) {
+  const fin = new Date(ahora)
+  const inicio = inicioEfectivoEstancia(horaEntrada, fin, config)
+  return Math.max(0, minutosEntre(inicio, fin))
+}
