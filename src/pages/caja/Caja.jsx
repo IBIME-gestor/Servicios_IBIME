@@ -122,6 +122,7 @@ export default function Caja() {
   const [expandirRegistro, setExpandirRegistro] = useState(false)
   const [seleccionadoId, setSeleccionadoId] = useState(null)
   const [modulo, setModulo] = useState(null)
+  const [panelResumen, setPanelResumen] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState('')
   const [error, setError] = useState('')
@@ -350,87 +351,124 @@ export default function Caja() {
         {mostrarCargaMasiva && <div style={{ marginTop: '0.8rem' }}><CargaMasivaServicios tipo="comedor" /></div>}
       </div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '0.7rem', marginBottom: '1.25rem' }}>
+      <div className="caja-kpis">
         <Kpi titulo="Alumnos" valor={alumnos.length} />
-        <Kpi titulo="Con comedor" valor={actividad.filter(a => a.cafeteria.length).length} />
-        <Kpi titulo="Con estancia" valor={actividad.filter(a => a.estancia.length).length} />
+        <Kpi
+          titulo="Con comedor"
+          valor={actividad.filter(a => a.cafeteria.length).length}
+          desplegable
+          activo={panelResumen === 'comedor'}
+          onClick={() => setPanelResumen(panelResumen === 'comedor' ? null : 'comedor')}
+        />
+        <Kpi
+          titulo="Con estancia"
+          valor={actividad.filter(a => a.estancia.length).length}
+          desplegable
+          activo={panelResumen === 'estancia'}
+          onClick={() => setPanelResumen(panelResumen === 'estancia' ? null : 'estancia')}
+        />
         <Kpi titulo="Esperado" valor={dinero(totalEsperado)} />
         <Kpi titulo="Cargado" valor={dinero(totalCargado)} />
         <Kpi titulo="Pagado" valor={dinero(totalPagado)} />
       </div>
 
-      <button className="card" onClick={() => setExpandirRegistro(v => !v)} style={{ width: '100%', textAlign: 'left', cursor: 'pointer', border: '1px solid var(--border)', padding: '1rem', marginBottom: expandirRegistro ? '0.7rem' : '1.25rem' }}>
-        <div style={{ fontSize: '1.55rem', fontWeight: 800 }}>{alumnosEnRegistro.length}</div>
-        <div style={{ color: 'var(--ink-muted)', fontSize: '0.8rem' }}>Alumnos en registro {expandirRegistro ? '▲' : '▼'}</div>
-      </button>
-
-      {expandirRegistro && (
-        <div className="card" style={{ padding: '1rem', marginBottom: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
-            <div><strong>Alumnos en registro</strong><div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>Selecciona un alumno para trabajar su detalle financiero.</div></div>
-            <input className="input" placeholder="Buscar alumno, matrícula o grupo…" value={texto} onChange={e => setTexto(e.target.value)} style={{ maxWidth: 340 }} />
+      {panelResumen && (
+        <div className="card caja-summary-panel">
+          <div className="section-heading">
+            <div>
+              <strong>{panelResumen === 'comedor' ? 'Alumnos con comedor' : 'Alumnos con estancia'}</strong>
+              <span>Haz clic en un alumno para abrir su desglose a la derecha.</span>
+            </div>
+            <button className="btn btn-outline btn-small" onClick={() => setPanelResumen(null)}>Cerrar</button>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ textAlign: 'left', color: 'var(--ink-muted)', fontSize: '0.78rem' }}><th>Alumno</th><th>Grupo</th><th>Comedor</th><th>Estancia</th><th>Total estimado</th></tr></thead>
-              <tbody>
-                {filtrados.map(a => {
-                  const selected = a.id === seleccionadoId
-                  const tc = a.cafeteria.reduce((s, c) => s + costoConsumoLocal(c, configComedor), 0)
-                  const te = a.estancia.reduce((s, e) => s + (Number(e.costo) || 0), 0)
-                  return <tr key={a.id} onClick={() => seleccionar(a)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: selected ? 'var(--surface-sunken)' : 'transparent', outline: selected ? '2px solid var(--red-600)' : 'none', outlineOffset: '-2px' }}>
-                    <td style={{ padding: '0.7rem 0.4rem' }}><strong>{selected ? '▶ ' : ''}{a.nombre}</strong><div style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>{a.matricula}</div></td>
-                    <td>{a.grado} {a.grupo}</td><td>🍽️ {a.cafeteria.length}</td><td>🏫 {a.estancia.length}</td><td><strong>{dinero(tc + te)}</strong></td>
-                  </tr>
-                })}
-              </tbody>
-            </table>
+          <div className="caja-summary-list">
+            {actividad.filter(a => panelResumen === 'comedor' ? a.cafeteria.length : a.estancia.length).sort((a, b) => a.nombre.localeCompare(b.nombre)).map(a => (
+              <button key={a.id} className="caja-summary-row" onClick={() => seleccionar(a)}>
+                <span><strong>{a.nombre}</strong><small>{a.grado} {a.grupo} · {a.matricula}</small></span>
+                <span>{panelResumen === 'comedor' ? `🍽️ ${a.cafeteria.length}` : `🏫 ${a.estancia.length}`}</span>
+              </button>
+            ))}
           </div>
         </div>
       )}
 
+      <div className="caja-workspace">
+        <section>
+          <button className="card caja-register-toggle" onClick={() => setExpandirRegistro(v => !v)}>
+            <div><strong>Alumnos en registro</strong><span>Selecciona un alumno para trabajar su detalle financiero.</span></div>
+            <strong className="caja-register-count">{alumnosEnRegistro.length} {expandirRegistro ? '▲' : '▼'}</strong>
+          </button>
+
+          {expandirRegistro && (
+            <div className="card caja-register-list">
+              <div className="caja-list-toolbar">
+                <input className="input" placeholder="Buscar alumno, matrícula o grupo…" value={texto} onChange={e => setTexto(e.target.value)} />
+              </div>
+              <div className="caja-table-wrap">
+                <table className="caja-table">
+                  <thead><tr><th>Alumno</th><th>Grupo</th><th>Comedor</th><th>Estancia</th><th>Total</th></tr></thead>
+                  <tbody>
+                    {filtrados.map(a => {
+                      const selected = a.id === seleccionadoId
+                      const tc = a.cafeteria.reduce((sum, c) => sum + costoConsumoLocal(c, configComedor), 0)
+                      const te = a.estancia.reduce((sum, e) => sum + (Number(e.costo) || 0), 0)
+                      return <tr key={a.id} onClick={() => seleccionar(a)} className={selected ? 'selected' : ''}>
+                        <td><strong>{selected ? '▶ ' : ''}{a.nombre}</strong><small>{a.matricula}</small></td>
+                        <td>{a.grado} {a.grupo}</td><td>🍽️ {a.cafeteria.length}</td><td>🏫 {a.estancia.length}</td><td><strong>{dinero(tc + te)}</strong></td>
+                      </tr>
+                    })}
+                  </tbody>
+                </table>
+                {filtrados.length === 0 && <p className="page-muted caja-no-results">No hay alumnos con servicios en este periodo.</p>}
+              </div>
+            </div>
+          )}
+        </section>
+
       {seleccionado && (
-        <div className="card" style={{ padding: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-            <div><h2 style={{ margin: 0 }}>{seleccionado.nombre}</h2><span style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>{seleccionado.grado} {seleccionado.grupo} · {seleccionado.matricula} · {seleccionado.correoAlumno || 'sin correo alumno'}</span></div>
-            <button className="btn btn-outline" onClick={() => { setSeleccionadoId(null); setPlanes([]); setConsumosMesPlan([]) }}>Cerrar</button>
+        <aside className="card caja-detail-drawer">
+          <div className="drawer-header">
+            <div><h2 style={{ margin: 0 }}>{seleccionado.nombre}</h2><span>{seleccionado.grado} {seleccionado.grupo} · {seleccionado.matricula}</span></div>
+            <button className="btn btn-outline btn-small" onClick={() => { setSeleccionadoId(null); setPlanes([]); setConsumosMesPlan([]); setModulo(null) }}>Cerrar</button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1.25rem' }}>
+          <div className="caja-module-grid">
             <Modulo titulo="🍽️ Comedor" total={totalCafeteria} activo={modulo === 'comedor'} onClick={() => setModulo(modulo === 'comedor' ? null : 'comedor')} detalle={`${cafeteriaSeleccionada.length} consumo(s)`}/>
             <Modulo titulo="🏫 Estancia" total={totalEstancia} activo={modulo === 'estancia'} onClick={() => setModulo(modulo === 'estancia' ? null : 'estancia')} detalle={`${estanciaSeleccionada.length} registro(s)`}/>
           </div>
 
-          <div style={{ marginTop: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '0.7rem' }}>
+          <div className="caja-mini-grid">
             <Mini titulo="Esperado" valor={dinero(totalEsperado)} />
             <Mini titulo="Cargado" valor={dinero(totalCargado)} />
             <Mini titulo="Pagado" valor={dinero(totalPagado)} />
             <Mini titulo="Pendiente" valor={dinero(Math.max(totalEsperado - totalPagado, 0))} />
           </div>
 
-          <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-              <div><strong>🍽️ Mensualidades de comedor</strong><div style={{ fontSize: '0.76rem', color: 'var(--ink-muted)' }}>Desayuno y comida son conceptos independientes.</div></div>
-              {tienePermiso(user, 'caja.asignar_plan_comedor') && <button className="btn btn-outline" onClick={() => setMostrarMensualidad(v => !v)}>+ {mostrarMensualidad ? 'Cerrar' : 'Registrar mensualidad'}</button>}
+          <div className="caja-monthly-section">
+            <div className="section-heading">
+              <div><strong>🍽️ Mensualidades de comedor</strong><span>Desayuno y comida son conceptos independientes.</span></div>
+              {tienePermiso(user, 'caja.asignar_plan_comedor') && <button className="btn btn-outline btn-small" onClick={() => setMostrarMensualidad(v => !v)}>+ {mostrarMensualidad ? 'Cerrar' : 'Registrar'}</button>}
             </div>
 
             {[...planesDesayuno, ...planesComida].map(plan => <PlanMensual key={plan.id} plan={plan} consumos={consumosMesPlan} vacaciones={calendario.vacaciones || []} cambiarEstado={cambiarEstadoMensualidad} guardando={guardando} puedeGestionar={tienePermiso(user, 'caja.asignar_plan_comedor')} />)}
 
-            {mostrarMensualidad && <form onSubmit={crearMensualidad} className="card" style={{ marginTop: '0.8rem', padding: '1rem', background: 'var(--surface-sunken)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '0.7rem' }}>
+            {mostrarMensualidad && <form onSubmit={crearMensualidad} className="caja-monthly-form">
+              <div className="caja-form-grid">
                 <label><span>Plan del catálogo</span><select className="input" value={formMensualidad.planCatalogoId} onChange={e => { const id = e.target.value; const p = catalogoPlanes.find(x => x.id === id); setFormMensualidad({ ...formMensualidad, planCatalogoId: id, tipo: p?.tipo || formMensualidad.tipo, monto: p?.monto ?? formMensualidad.monto }) }}><option value="">Captura manual</option>{catalogoPlanes.map(p => <option key={p.id} value={p.id}>{p.nombre} · ${Number(p.monto || 0).toFixed(2)}</option>)}</select></label>
                 <label><span>Concepto</span><select className="input" value={formMensualidad.tipo} disabled={Boolean(formMensualidad.planCatalogoId)} onChange={e => setFormMensualidad({ ...formMensualidad, tipo: e.target.value })}><option value="desayuno">Desayuno</option><option value="comida">Comida</option></select></label>
                 <label><span>Monto mensual</span><input className="input" type="number" min="0" step="0.01" value={formMensualidad.monto} readOnly={Boolean(formMensualidad.planCatalogoId)} placeholder="0.00" onChange={e => setFormMensualidad({ ...formMensualidad, monto: e.target.value })}/></label>
               </div>
-              <div style={{ marginTop: '0.7rem', fontSize: '0.78rem', color: 'var(--ink-muted)' }}>Periodo automático: <strong>{fechaInput(mesActual.inicio)} → {fechaInput(mesActual.fin)}</strong> · días de consumo: <strong>{contarDiasHabiles(mesActual.inicio, mesActual.fin, calendario.vacaciones || [])}</strong>. No necesitas configurar manualmente el número de días.</div>
-              <button className="btn btn-primary" disabled={guardando === 'nueva-mensualidad'} style={{ marginTop: '0.8rem' }}>{guardando === 'nueva-mensualidad' ? 'Guardando…' : 'Guardar mensualidad'}</button>
+              <div className="page-muted">Periodo: <strong>{fechaInput(mesActual.inicio)} → {fechaInput(mesActual.fin)}</strong> · días de consumo: <strong>{contarDiasHabiles(mesActual.inicio, mesActual.fin, calendario.vacaciones || [])}</strong>.</div>
+              <button className="btn btn-primary" disabled={guardando === 'nueva-mensualidad'}>{guardando === 'nueva-mensualidad' ? 'Guardando…' : 'Guardar mensualidad'}</button>
             </form>}
           </div>
 
           {modulo === 'comedor' && <DetalleComedor rows={consumosIndividuales} config={configComedor} cambiarEstado={cambiarEstado} guardando={guardando} planesDesayuno={planesDesayuno} planesComida={planesComida} planDesayunoPagado={planDesayunoPagado} planComidaPagado={planComidaPagado} planDesayunoActivo={planDesayunoActivo} planComidaActivo={planComidaActivo} consumosTotales={cafeteriaSeleccionada}/>} 
           {modulo === 'estancia' && <DetalleEstancia rows={estanciaSeleccionada} cambiarEstado={cambiarEstado} guardando={guardando}/>} 
-        </div>
+        </aside>
       )}
+      </div>
+
     </div>
   )
 }
@@ -440,7 +478,7 @@ function costoConsumoLocal(c, config) {
 }
 
 function CampoFecha({ label, value, onChange }) { return <label style={{ minWidth: 155 }}><div style={{ fontSize: '0.76rem', color: 'var(--ink-muted)', marginBottom: 4 }}>{label}</div><input className="input" type="date" value={value} onChange={e => onChange(e.target.value)} /></label> }
-function Kpi({ titulo, valor }) { return <div className="card" style={{ padding: '1rem' }}><div style={{ fontSize: '1.25rem', fontWeight: 800 }}>{valor}</div><div style={{ color: 'var(--ink-muted)', fontSize: '0.78rem' }}>{titulo}</div></div> }
+function Kpi({ titulo, valor, desplegable = false, activo = false, onClick }) { return <button type="button" className={`card caja-kpi ${activo ? 'active' : ''} ${desplegable ? 'clickable' : ''}`} onClick={onClick} disabled={!desplegable} aria-pressed={activo}><div className="caja-kpi-value">{valor}</div><div className="caja-kpi-label">{titulo}{desplegable ? <span>{activo ? '▲' : '▼'}</span> : null}</div></button> }
 function Mini({ titulo, valor }) { return <div style={{ padding: '0.75rem', border: '1px solid var(--border)', borderRadius: 10 }}><div style={{ fontSize: '0.72rem', color: 'var(--ink-muted)' }}>{titulo}</div><strong>{valor}</strong></div> }
 function Modulo({ titulo, total, detalle, activo, onClick }) { return <button onClick={onClick} className="card" style={{ padding: '1rem', textAlign: 'left', cursor: 'pointer', border: `2px solid ${activo ? 'var(--red-600)' : 'var(--border)'}`, background: activo ? 'var(--surface-sunken)' : 'var(--surface)' }}><div style={{ fontWeight: 800 }}>{titulo}</div><div style={{ fontSize: '1.35rem', marginTop: '0.3rem' }}>{dinero(total)}</div><div style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>{detalle} · {activo ? 'ocultar detalle' : 'ver detalle'}</div></button> }
 function Check({ label, checked, disabled, onChange }) { return <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', opacity: disabled ? 0.5 : 1 }}><input type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={e => onChange(e.target.checked)} />{label}</label> }
