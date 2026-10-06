@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { rangoSemanaActual } from './fechas'
-import { calcularCostoEstancia, minutosEntre, obtenerConfigEstancia } from './pricing'
+import { calcularCostoEstancia, calcularMinutosEstancia, obtenerConfigEstancia } from './pricing'
 import { subirArchivoADrive } from './googleDrive'
 
 /** Registra la llegada de un alumno a estancia (abre el registro). */
@@ -77,9 +77,9 @@ export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob, ho
 
   const horaEntrada = data.horaEntrada.toDate()
   const ahora = horaSalida || new Date()
-  const minutos = minutosEntre(horaEntrada, ahora)
-  if (minutos < 0) throw new Error('La hora de retiro no puede ser anterior a la hora de entrada.')
   const config = await obtenerConfigEstancia()
+  const minutos = calcularMinutosEstancia(horaEntrada, ahora, config)
+  if (minutos < 0) throw new Error('La hora de retiro no puede ser anterior a la hora de entrada.')
   const { costo, desglose } = calcularCostoEstancia(minutos, config)
 
   let firmaUrl = data.firmaUrl || null
@@ -138,4 +138,21 @@ export async function estanciasSemanaTodas() {
     horaEntrada: d.data().horaEntrada?.toDate(),
     horaSalida: d.data().horaSalida?.toDate() || null,
   }))
+}
+
+
+/** Marca una estancia cerrada como pagada desde el módulo de Estancia. */
+export async function marcarEstanciaPagada({ estanciaId, usuario }) {
+  const ref = doc(db, 'estancias', estanciaId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('La estancia ya no existe.')
+  const data = snap.data()
+  if (!data.horaSalida) throw new Error('No se puede registrar el pago mientras la estancia siga abierta.')
+  if (data.pagado) return { ...data, pagado: true }
+  await updateDoc(ref, {
+    pagado: true,
+    pagadoPor: usuario || 'usuario',
+    fechaPagado: serverTimestamp(),
+  })
+  return { ...data, pagado: true }
 }
