@@ -327,9 +327,9 @@ export default function Caja() {
   if (cargando) return <p style={{ color: 'var(--ink-muted)' }}>Cargando registro de alumnos…</p>
 
   return (
-    <div>
-      <h1 style={{ marginTop: 0 }}>💳 Caja</h1>
-      <p style={{ color: 'var(--ink-muted)', marginTop: '-0.5rem' }}>Consulta, carga y pago de servicios por cualquier periodo.</p>
+    <div className="caja-page page-shell">
+      <div className="page-heading"><div><h1>💳 Caja</h1>
+      <p className="page-subtitle">Consulta, carga y pago de servicios por cualquier periodo.</p></div></div>
 
       <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'end', gap: '0.8rem', flexWrap: 'wrap' }}>
