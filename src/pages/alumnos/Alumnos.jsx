@@ -29,7 +29,7 @@ export default function Alumnos() {
     .sort((a, b) => a.nombre.localeCompare(b.nombre))
 
   return (
-    <div>
+    <div className="alumnos-page">
       <h1 style={{ marginTop: 0 }}>Alumnos</h1>
       <p style={{ color: 'var(--ink-muted)', marginTop: '-0.5rem' }}>
         Directorio de solo lectura — para registrar consumos o estancia usa el módulo correspondiente.
@@ -54,7 +54,8 @@ export default function Alumnos() {
       {cargando ? (
         <p style={{ color: 'var(--ink-muted)' }}>Cargando…</p>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="alumnos-table-wrap">
+          <table className="alumnos-table">
           <thead>
             <tr style={{ textAlign: 'left', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
               <th style={{ padding: '0.4rem' }}>Nombre</th>
@@ -73,7 +74,8 @@ export default function Alumnos() {
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       )}
       {!cargando && filtrados.length === 0 && (
         <p style={{ color: 'var(--ink-muted)', marginTop: '1rem' }}>No se encontraron alumnos.</p>
