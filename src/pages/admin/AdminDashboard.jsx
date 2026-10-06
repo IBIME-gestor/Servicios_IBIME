@@ -29,30 +29,22 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState(disponibles[0]?.id)
 
   return (
-    <div>
-      <h1 style={{ marginTop: 0 }}>Administración</h1>
+    <div className="admin-page page-shell">
+      <div className="page-heading"><div><h1>Administración</h1><p className="page-subtitle">Configura usuarios, servicios, comedor, estancia y operación del sistema.</p></div></div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+      <div className="admin-tabs">
         {disponibles.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            style={{
-              padding: '0.6rem 0.9rem',
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-              fontWeight: tab === t.id ? 700 : 500,
-              color: tab === t.id ? 'var(--red-600)' : 'var(--ink-muted)',
-              borderBottom: tab === t.id ? '2px solid var(--red-600)' : '2px solid transparent',
-              marginBottom: '-1px',
-            }}
+            className={`admin-tab${tab === t.id ? ' active' : ''}`}
           >
             {t.label}
           </button>
         ))}
       </div>
 
+      <div className="admin-content">
       {tab === 'usuarios' && <UsuariosTab />}
       {tab === 'importar' && <ImportarAlumnosTab />}
       {tab === 'estancia' && <ConfigEstanciaTab />}
@@ -62,6 +54,7 @@ export default function AdminDashboard() {
       {tab === 'pagos' && <DashboardPagos />}
       {tab === 'retroactiva' && <CargaRetroactivaTab />}
       {tab === 'notificaciones' && <NotificacionesTab />}
+      </div>
     </div>
   )
 }
