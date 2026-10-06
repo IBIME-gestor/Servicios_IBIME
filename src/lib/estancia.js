@@ -44,6 +44,27 @@ export async function estanciasActivas() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data(), horaEntrada: d.data().horaEntrada?.toDate() }))
 }
 
+/** Registros de estancia capturados durante un día, abiertos o cerrados. */
+export async function estanciasDelDia(fecha = new Date()) {
+  const inicio = new Date(fecha)
+  inicio.setHours(0, 0, 0, 0)
+  const fin = new Date(fecha)
+  fin.setHours(23, 59, 59, 999)
+  const q = query(
+    collection(db, 'estancias'),
+    where('horaEntrada', '>=', Timestamp.fromDate(inicio)),
+    where('horaEntrada', '<=', Timestamp.fromDate(fin)),
+    orderBy('horaEntrada', 'desc')
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+    horaEntrada: d.data().horaEntrada?.toDate(),
+    horaSalida: d.data().horaSalida?.toDate?.() || null,
+  }))
+}
+
 /**
  * Cierra una estancia: calcula minutos y costo según la configuración
  * vigente, sube la firma a Drive (si se capturó) y guarda todo.
