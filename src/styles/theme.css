@@ -185,7 +185,9 @@ a { color: var(--navy-500); }
 .caja-table tr.selected { background: var(--amber-100); outline: 2px solid var(--amber-500); outline-offset: -2px; }
 .caja-table td:first-child { min-width: 170px; }
 .caja-table td:first-child small { display: block; color: var(--ink-muted); font-size: .69rem; margin-top: .12rem; }
-.caja-detail-drawer { padding: 1.1rem; min-width: 0; position: sticky; top: 84px; max-height: calc(100vh - 104px); overflow-y: auto; }
+.caja-detail-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(5,20,30,.48); backdrop-filter: blur(3px); display: flex; justify-content: flex-end; }
+.caja-detail-drawer { width: min(540px, 94vw); height: 100%; border-radius: 18px 0 0 18px; padding: 1.2rem; min-width: 0; overflow-y: auto; box-shadow: -16px 0 45px rgba(0,0,0,.2); animation: cajaDrawerIn .18s ease-out; }
+@keyframes cajaDrawerIn { from { transform: translateX(24px); opacity: .7; } to { transform: translateX(0); opacity: 1; } }
 .caja-module-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin-top: 1rem; }
 .caja-mini-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .55rem; margin-top: .8rem; }
 .caja-monthly-section { margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--border); }
@@ -220,6 +222,7 @@ a { color: var(--navy-500); }
 .estancia-daily-info span { color: var(--ink-muted); margin-top: .12rem; }
 .estancia-daily-cost { text-align: right; font-size: .78rem; white-space: nowrap; }
 .text-success { color: var(--green-600) !important; font-weight: 700; }
+.status-paid { background: #e8f5ee; color: var(--green-700); margin-top: .35rem; }
 .daily-empty { text-align: center; padding: 2rem .5rem; color: var(--ink-muted); }
 .daily-empty span { font-size: 1.6rem; }
 .daily-empty p { font-size: .84rem; margin-bottom: 0; }
@@ -278,7 +281,7 @@ a { color: var(--navy-500); }
   .ibime-topbar { padding-inline: 1.25rem; }
   .app-main { padding: 1.2rem; }
   .caja-workspace, .estancia-layout, .cafeteria-layout { grid-template-columns: 1fr; }
-  .caja-detail-drawer, .estancia-daily-card, .cafeteria-daily-card { position: static; max-height: none; }
+  .estancia-daily-card, .cafeteria-daily-card { position: static; max-height: none; }
   .cafeteria-daily-card, .estancia-daily-card { order: 2; }
   .cafeteria-daily-list, .estancia-daily-list { max-height: 430px; }
 }
@@ -311,5 +314,6 @@ a { color: var(--navy-500); }
   .estancia-active-item { grid-template-columns: auto minmax(0,1fr); }
   .estancia-active-item .btn { grid-column: 2; justify-self: start; }
   .estancia-drawer { border-radius: 0; }
+  .caja-detail-drawer { width: 100%; border-radius: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
