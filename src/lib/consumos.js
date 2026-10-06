@@ -1,4 +1,4 @@
-import { addDoc, collection, getDocs, orderBy, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, getDocs, orderBy, query, runTransaction, serverTimestamp, Timestamp, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { rangoSemanaActual } from './fechas'
 import { obtenerConfigComedor, calcularTotalComedor } from './pricingComedor'
@@ -25,28 +25,41 @@ export async function existeConsumoDelDia({ alumnoId, tipo, fechaServicio = null
 }
 
 export async function registrarConsumo({ alumno, tipo, registradoPor, fechaServicio = null, retroactivo = false }) {
-  // Un alumno solo puede tener un consumo del mismo tipo por día.
-  // La comprobación ocurre antes de guardar para evitar duplicados por doble clic.
-  if (await existeConsumoDelDia({ alumnoId: alumno.id, tipo, fechaServicio })) {
-    return { creado: false, duplicado: true }
-  }
+  // La clave del documento hace que la operación sea idempotente:
+  // un alumno solo puede tener un desayuno y una comida por día, incluso
+  // si se hacen dos clics casi simultáneos o dos terminales intentan capturarlo.
+  const fecha = fechaServicio ? new Date(fechaServicio) : new Date()
+  const y = fecha.getFullYear()
+  const m = String(fecha.getMonth() + 1).padStart(2, '0')
+  const d = String(fecha.getDate()).padStart(2, '0')
+  const claveDia = `${y}-${m}-${d}`
+  const id = `${alumno.id}_${tipo}_${claveDia}`
+  const ref = doc(db, 'consumos', id)
 
   const config = await obtenerConfigComedor()
   const costo = tipo === 'desayuno' ? config.precioDesayuno : config.precioComida
-  await addDoc(collection(db, 'consumos'), {
-    alumnoId: alumno.id,
-    alumnoNombre: alumno.nombre,
-    alumnoGrupo: alumno.grupo || '',
-    tipo,
-    costo,
-    cargado: false,
-    pagado: false,
-    fecha: fechaServicio ? Timestamp.fromDate(fechaServicio) : serverTimestamp(),
-    capturadoEn: serverTimestamp(),
-    registradoPor,
-    retroactivo: Boolean(retroactivo),
+
+  const creado = await runTransaction(db, async (transaction) => {
+    const existente = await transaction.get(ref)
+    if (existente.exists()) return false
+
+    transaction.set(ref, {
+      alumnoId: alumno.id,
+      alumnoNombre: alumno.nombre,
+      alumnoGrupo: alumno.grupo || '',
+      tipo,
+      costo,
+      cargado: false,
+      pagado: false,
+      fecha: Timestamp.fromDate(fecha),
+      capturadoEn: serverTimestamp(),
+      registradoPor,
+      retroactivo: Boolean(retroactivo),
+    })
+    return true
   })
-  return { creado: true, duplicado: false }
+
+  return { creado, duplicado: !creado }
 }
 
 export async function consumosSemanaAlumno(alumnoId) {
