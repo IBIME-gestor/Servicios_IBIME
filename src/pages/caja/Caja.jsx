@@ -424,9 +424,11 @@ export default function Caja() {
             </div>
           )}
         </section>
+      </div>
 
       {seleccionado && (
-        <aside className="card caja-detail-drawer">
+        <div className="caja-detail-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) { setSeleccionadoId(null); setPlanes([]); setConsumosMesPlan([]); setModulo(null) } }}>
+          <aside className="card caja-detail-drawer" role="dialog" aria-modal="true">
           <div className="drawer-header">
             <div><h2 style={{ margin: 0 }}>{seleccionado.nombre}</h2><span>{seleccionado.grado} {seleccionado.grupo} · {seleccionado.matricula}</span></div>
             <button className="btn btn-outline btn-small" onClick={() => { setSeleccionadoId(null); setPlanes([]); setConsumosMesPlan([]); setModulo(null) }}>Cerrar</button>
@@ -465,9 +467,9 @@ export default function Caja() {
 
           {modulo === 'comedor' && <DetalleComedor rows={consumosIndividuales} config={configComedor} cambiarEstado={cambiarEstado} guardando={guardando} planesDesayuno={planesDesayuno} planesComida={planesComida} planDesayunoPagado={planDesayunoPagado} planComidaPagado={planComidaPagado} planDesayunoActivo={planDesayunoActivo} planComidaActivo={planComidaActivo} consumosTotales={cafeteriaSeleccionada}/>} 
           {modulo === 'estancia' && <DetalleEstancia rows={estanciaSeleccionada} cambiarEstado={cambiarEstado} guardando={guardando}/>} 
-        </aside>
+          </aside>
+        </div>
       )}
-      </div>
 
     </div>
   )
