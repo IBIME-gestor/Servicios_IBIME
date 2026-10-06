@@ -29,21 +29,20 @@ export default function Alumnos() {
     .sort((a, b) => a.nombre.localeCompare(b.nombre))
 
   return (
-    <div className="alumnos-page">
-      <h1 style={{ marginTop: 0 }}>Alumnos</h1>
-      <p style={{ color: 'var(--ink-muted)', marginTop: '-0.5rem' }}>
+    <div className="alumnos-page page-shell">
+      <div className="page-heading"><div><h1>Alumnos</h1>
+      <p className="page-subtitle">
         Directorio de solo lectura — para registrar consumos o estancia usa el módulo correspondiente.
-      </p>
+      </p></div></div>
 
-      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+      <div className="alumnos-toolbar">
         <input
           className="input"
           placeholder="Buscar por nombre o matrícula…"
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
-          style={{ maxWidth: 280 }}
         />
-        <select className="input" value={grupoFiltro} onChange={(e) => setGrupoFiltro(e.target.value)} style={{ maxWidth: 200 }}>
+        <select className="input" value={grupoFiltro} onChange={(e) => setGrupoFiltro(e.target.value)}>
           <option value="">Todos los grupos</option>
           {grupos.map((g) => (
             <option key={g} value={g}>{g}</option>
@@ -57,20 +56,20 @@ export default function Alumnos() {
         <div className="alumnos-table-wrap">
           <table className="alumnos-table">
           <thead>
-            <tr style={{ textAlign: 'left', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-              <th style={{ padding: '0.4rem' }}>Nombre</th>
-              <th style={{ padding: '0.4rem' }}>Matrícula</th>
-              <th style={{ padding: '0.4rem' }}>Grado</th>
-              <th style={{ padding: '0.4rem' }}>Grupo</th>
+            <tr>
+              <th>Nombre</th>
+              <th>Matrícula</th>
+              <th>Grado</th>
+              <th>Grupo</th>
             </tr>
           </thead>
           <tbody>
             {filtrados.map((a) => (
-              <tr key={a.id} style={{ borderTop: '1px solid var(--border)' }}>
-                <td style={{ padding: '0.5rem 0.4rem' }}>{a.nombre}</td>
-                <td style={{ padding: '0.5rem 0.4rem', color: 'var(--ink-muted)' }}>{a.matricula}</td>
-                <td style={{ padding: '0.5rem 0.4rem' }}>{a.grado}</td>
-                <td style={{ padding: '0.5rem 0.4rem' }}>{a.grupo}</td>
+              <tr key={a.id}>
+                <td><strong>{a.nombre}</strong></td>
+                <td className="page-muted">{a.matricula}</td>
+                <td>{a.grado}</td>
+                <td>{a.grupo}</td>
               </tr>
             ))}
           </tbody>
