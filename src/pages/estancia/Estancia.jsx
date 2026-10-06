@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { listarAlumnosActivos, filtrarAlumnos } from '../../lib/alumnos'
-import { iniciarEstancia, estanciasActivas, estanciasDelDia, finalizarEstancia } from '../../lib/estancia'
+import { iniciarEstancia, estanciasActivas, estanciasDelDia, finalizarEstancia, marcarEstanciaPagada } from '../../lib/estancia'
 import { tienePermiso } from '../../lib/permisos'
 import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
+import { calcularCostoEstancia, calcularMinutosEstancia, obtenerConfigEstancia } from '../../lib/pricing'
 import FirmaPad from '../../components/FirmaPad'
+
+const dineroLocal = (n) => `$${Number(n || 0).toFixed(2)}`
 
 const minutosTexto = (minutos) => {
   const total = Number(minutos || 0)
@@ -29,6 +32,8 @@ export default function Estancia() {
   const [registrando, setRegistrando] = useState(false)
   const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false)
   const [error, setError] = useState('')
+  const [configEstancia, setConfigEstancia] = useState(null)
+  const [ahora, setAhora] = useState(new Date())
   const firmaRef = useRef(null)
 
   async function cargarRegistros() {
@@ -39,7 +44,10 @@ export default function Estancia() {
 
   useEffect(() => {
     listarAlumnosActivos().then(setAlumnos)
+    obtenerConfigEstancia().then(setConfigEstancia).catch(() => setConfigEstancia(null))
+    const reloj = setInterval(() => setAhora(new Date()), 30000)
     cargarRegistros().catch((err) => setError(err?.message || 'No fue posible cargar las estancias.'))
+    return () => clearInterval(reloj)
   }, [])
 
   const sugerencias = filtrarAlumnos(alumnos, texto)
@@ -78,7 +86,7 @@ export default function Estancia() {
         retiradoPor: nombreRetira.trim(),
         firmaBlob,
       })
-      setResultado(res)
+      setResultado({ ...res, estanciaId: retirando.id, pagado: false })
       await cargarRegistros()
     } catch (err) {
       console.error(err)
@@ -87,6 +95,23 @@ export default function Estancia() {
       setCargando(false)
     }
   }
+
+  async function pagarEstancia(estanciaId) {
+    setGuardandoPago(estanciaId)
+    setError('')
+    try {
+      await marcarEstanciaPagada({ estanciaId, usuario: user?.email || user?.uid || 'usuario' })
+      setRegistrosHoy((lista) => lista.map((e) => e.id === estanciaId ? { ...e, pagado: true } : e))
+      setResultado((actual) => actual?.estanciaId === estanciaId ? { ...actual, pagado: true } : actual)
+    } catch (err) {
+      console.error(err)
+      setError(err?.message || 'No fue posible registrar el pago.')
+    } finally {
+      setGuardandoPago('')
+    }
+  }
+
+  const [guardandoPago, setGuardandoPago] = useState('')
 
   const cerradasHoy = registrosHoy.filter((e) => e.horaSalida)
 
@@ -159,6 +184,13 @@ export default function Estancia() {
                     <div className="estancia-item-main">
                       <strong>{e.alumnoNombre}</strong>
                       <span>Entrada: {formatoHora(e.horaEntrada)}</span>
+                      {configEstancia && (() => {
+                        const minutosActuales = calcularMinutosEstancia(e.horaEntrada, ahora, configEstancia)
+                        const preview = calcularCostoEstancia(minutosActuales, configEstancia)
+                        return <span className={preview.costo === 0 ? 'text-success' : ''}>
+                          {minutosTexto(minutosActuales)} · {preview.costo === 0 ? 'Dentro de gracia' : dineroLocal(preview.costo)}
+                        </span>
+                      })()}
                     </div>
                     <button className="btn btn-primary" onClick={() => abrirRetiro(e)}>Dar salida</button>
                   </div>
@@ -191,7 +223,16 @@ export default function Estancia() {
                     )}
                   </div>
                   <div className="estancia-daily-cost">
-                    {e.horaSalida ? <strong>${Number(e.costo || 0).toFixed(2)}</strong> : <span>—</span>}
+                    {e.horaSalida ? (
+                      <>
+                        <strong>${Number(e.costo || 0).toFixed(2)}</strong>
+                        {e.pagado ? <span className="status-pill status-paid">✓ Pagado</span> : (
+                          <button className="btn btn-primary btn-small" disabled={guardandoPago === e.id} onClick={() => pagarEstancia(e.id)}>
+                            {guardandoPago === e.id ? '…' : 'Pagado'}
+                          </button>
+                        )}
+                      </>
+                    ) : <span>—</span>}
                   </div>
                 </div>
               ))}
@@ -214,7 +255,16 @@ export default function Estancia() {
                 <div className="result-label">Tiempo total en estancia</div>
                 <div className="result-cost">${Number(resultado.costo || 0).toFixed(2)} MXN</div>
                 <p className="page-muted">{resultado.desglose}</p>
-                <button className="btn btn-primary" onClick={() => setRetirando(null)}>Listo</button>
+                <div className="drawer-actions" style={{ justifyContent: 'center' }}>
+                  {resultado.pagado ? (
+                    <span className="status-pill status-paid">✓ Pago registrado y enviado a Caja</span>
+                  ) : (
+                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => pagarEstancia(resultado.estanciaId)}>
+                      {guardandoPago === resultado.estanciaId ? 'Registrando…' : '💳 Marcar como pagado'}
+                    </button>
+                  )}
+                  <button className="btn btn-outline" onClick={() => setRetirando(null)}>Listo</button>
+                </div>
               </div>
             ) : (
               <>
