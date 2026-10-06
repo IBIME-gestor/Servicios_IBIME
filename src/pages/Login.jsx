@@ -25,42 +25,19 @@ export default function Login() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--navy-900)',
-        padding: '1rem',
-      }}
-    >
-      <div className="card" style={{ width: 360, padding: '2rem', textAlign: 'center' }}>
-        <img src="/icons/icon-96.png" alt="IBIME" width={56} height={56} />
-        <h1 style={{ fontSize: '1.2rem', margin: '0.75rem 0 0.1rem' }}>Sistema IBIME</h1>
-        <p style={{ color: 'var(--ink-muted)', fontSize: '0.85rem', margin: '0 0 1.5rem' }}>
-          Caja · Cafetería · Estancia
-        </p>
+    <div className="login-page">
+      <div className="card login-card">
+        <img className="login-logo" src="/icons/icon-96.png" alt="IBIME" />
+        <h1>Sistema IBIME</h1>
+        <p>Caja · Cafetería · Estancia</p>
 
-        <button
-          className="btn btn-primary"
-          onClick={entrarConGoogle}
-          disabled={cargando}
-          style={{ width: '100%', justifyContent: 'center', gap: '0.6rem' }}
-        >
+        <button className="btn btn-primary" onClick={entrarConGoogle} disabled={cargando}>
           <GoogleIcon />
           {cargando ? 'Entrando…' : 'Continuar con Google'}
         </button>
 
-        <p style={{ color: 'var(--ink-muted)', fontSize: '0.78rem', marginTop: '0.9rem' }}>
-          Usa tu cuenta institucional de Google del colegio.
-        </p>
-
-        {(error || errorDominio) && (
-          <p style={{ color: 'var(--red-600)', fontSize: '0.85rem', marginTop: '0.9rem' }}>
-            {error || errorDominio}
-          </p>
-        )}
+        <p>Usa tu cuenta institucional de Google del colegio.</p>
+        {(error || errorDominio) && <p style={{ color: 'var(--red-600)' }}>{error || errorDominio}</p>}
       </div>
     </div>
   )
