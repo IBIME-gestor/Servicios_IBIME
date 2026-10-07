@@ -120,6 +120,7 @@ export default function App() {
               'admin.notificaciones',
               'admin.planes_comedor',
               'admin.calendario_comedor',
+              'admin.log',
             ]}
           >
             <Layout>
