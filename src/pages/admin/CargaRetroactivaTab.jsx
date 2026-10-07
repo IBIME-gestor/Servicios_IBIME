@@ -7,6 +7,7 @@ import {
   estanciasDelDia,
 } from '../../lib/cargaRetroactiva'
 import { useAuth } from '../../contexts/AuthContext'
+import { registrarLog } from '../../lib/log'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
 
 function horaInicial() {
@@ -75,6 +76,7 @@ export default function CargaRetroactivaTab() {
         hora: horaObj(hora),
         registradoPor: user.uid,
       })
+      registrarLog({ user, accion: 'admin.carga_retroactiva_comedor', modulo: 'admin', entidad: 'consumos', detalle: { tipo, fecha, creados: res.creados, omitidos: res.omitidos, alumnos: seleccionados.map((a) => a.matricula || a.id) } })
       setEstado({
         cargando: false,
         mensaje: `${res.creados} registro(s) creado(s) para ${tipo === 'desayuno' ? 'desayuno' : 'comida'}. ${res.omitidos} ya existían y se omitieron.`,
@@ -101,6 +103,7 @@ export default function CargaRetroactivaTab() {
         retiradoPor,
         registradoPor: user.uid,
       })
+      registrarLog({ user, accion: 'admin.carga_retroactiva_estancia', modulo: 'admin', entidad: 'estancias', alumno: alumnoEstancia, detalle: { fecha, creado: res.creado } })
       setEstado({
         cargando: false,
         mensaje: res.creado ? `Estancia de ${alumnoEstancia.nombre} registrada en ${fecha}.` : 'Ese alumno ya tiene una estancia registrada en esa fecha; no se duplicó.',
