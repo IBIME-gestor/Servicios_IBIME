@@ -1,4 +1,3 @@
-```jsx
 import { useState } from 'react'
 
 import UsuariosTab from './UsuariosTab'
@@ -185,4 +184,3 @@ export default function AdminDashboard() {
     </div>
   )
 }
-```
