@@ -50,7 +50,18 @@ service cloud.firestore {
     match /estancias/{estanciaId} {
       allow read: if estaAutenticado();
       allow create: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva');
-      allow update: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva') || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']));
+      allow update: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva') || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado','metodoPago']))
+        // El corte solo puede marcar la estancia como incluida en un corte.
+        || (tengoPermiso('estancia.corte') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['corteId','corteEn']));
+      allow delete: if esAdmin();
+    }
+
+    // Cortes de estancia (efectivo / Cometa entregados). Quien tenga el permiso
+    // estancia.corte puede verlos y crearlos; no se editan, solo el admin borra.
+    match /cortes_estancia/{corteId} {
+      allow read: if tengoPermiso('estancia.corte');
+      allow create: if tengoPermiso('estancia.corte');
+      allow update: if false;
       allow delete: if esAdmin();
     }
 
