@@ -9,6 +9,7 @@ export const CONFIG_ESTANCIA_DEFAULT = {
   horaInicioSecundaria: '14:00',
   minutosGracia: 0,
   costo30Min: 0,
+  costo31a60Min: 0, // si queda en 0 se usa la tarifa de 1 hora
   costo1Hora: 0,
   mensual1Hora: 0,
   mensual2Horas: 0,
@@ -30,6 +31,7 @@ export async function guardarConfigEstancia(config) {
     horaInicioSecundaria: config.horaInicioSecundaria || config.horaInicio || '14:00',
     minutosGracia: Number(config.minutosGracia || 0),
     costo30Min: Number(config.costo30Min || 0),
+    costo31a60Min: Number(config.costo31a60Min || 0),
     costo1Hora: Number(config.costo1Hora || 0),
     mensual1Hora: Number(config.mensual1Hora || 0),
     mensual2Horas: Number(config.mensual2Horas || 0),
@@ -39,11 +41,11 @@ export async function guardarConfigEstancia(config) {
 
 /**
  * Tarifa escalonada:
- * 1-30 min = tarifa de 30 min.
- * 31-60 min = 1 hora.
- * Cada hora adicional suma la tarifa de 1 hora.
- * El bloque sobrante de 1-30 min suma una tarifa de 30 min.
- * Ej.: 1h25 = 1h + 30 min; 2h25 = 2h + 30 min.
+ * 1-30 min  = tarifa de 30 min.
+ * 31-60 min = tarifa de 31 a 60 min (si no se configura, la de 1 hora).
+ * Cada hora completa suma la tarifa de 1 hora y el sobrante se cobra por bloque:
+ *   sobrante 1-30 min = tarifa de 30 min; sobrante 31-59 min = tarifa de 31 a 60 min.
+ * Ej.: 42 min = bloque 31-60; 1h25 = 1h + 30 min; 1h45 = 1h + bloque 31-60.
  */
 export function calcularCostoEstancia(minutosTotales, config = CONFIG_ESTANCIA_DEFAULT) {
   const minutosCobrables = Math.max(0, Number(minutosTotales || 0) - Number(config.minutosGracia || 0))
@@ -53,17 +55,20 @@ export function calcularCostoEstancia(minutosTotales, config = CONFIG_ESTANCIA_D
 
   const tarifa30 = Number(config.costo30Min || 0)
   const tarifaHora = Number(config.costo1Hora || 0)
+  const tarifa31a60 = Number(config.costo31a60Min || 0) || tarifaHora
   const horas = Math.floor(minutosCobrables / 60)
   const resto = minutosCobrables % 60
-  const bloques30 = resto === 0 ? 0 : 1
-  const costo = (horas * tarifaHora) + (bloques30 * tarifa30)
+  const bloques30 = resto >= 1 && resto <= 30 ? 1 : 0
+  const bloques31a60 = resto >= 31 ? 1 : 0
+  const costo = (horas * tarifaHora) + (bloques30 * tarifa30) + (bloques31a60 * tarifa31a60)
 
   const partes = []
   if (horas) partes.push(`${horas} h × $${tarifaHora.toFixed(2)}`)
-  if (bloques30) partes.push(`30 min × $${tarifa30.toFixed(2)}`)
+  if (bloques30) partes.push(`1-30 min × $${tarifa30.toFixed(2)}`)
+  if (bloques31a60) partes.push(`31-60 min × $${tarifa31a60.toFixed(2)}`)
   const desglose = `${minutosCobrables} min cobrables: ${partes.join(' + ')} = $${costo.toFixed(2)} MXN`
 
-  return { minutosCobrables, horas, bloques30, costo, desglose }
+  return { minutosCobrables, horas, bloques30, bloques31a60, costo, desglose }
 }
 
 export function obtenerTarifaMensualEstancia(horas, config = CONFIG_ESTANCIA_DEFAULT) {
