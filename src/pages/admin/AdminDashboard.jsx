@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import UsuariosTab from './UsuariosTab'
 import ImportarAlumnosTab from './ImportarAlumnosTab'
@@ -14,59 +14,8 @@ import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 
 import { useAuth } from '../../contexts/AuthContext'
 import { tienePermiso } from '../../lib/permisos'
-
-const TABS = [
-  {
-    id: 'usuarios',
-    label: 'Usuarios y permisos',
-    permiso: 'admin.usuarios',
-  },
-  {
-    id: 'importar',
-    label: 'Importar alumnos',
-    permiso: 'admin.importar',
-  },
-  {
-    id: 'estancia',
-    label: 'Configurar estancia',
-    permiso: 'admin.config_estancia',
-  },
-  {
-    id: 'comedor',
-    label: 'Configurar comedor',
-    permiso: 'admin.config_comedor',
-  },
-  {
-    id: 'planesComedor',
-    label: 'Planes de comedor',
-    permiso: 'admin.planes_comedor',
-  },
-  {
-    id: 'calendario',
-    label: 'Calendario / vacaciones',
-    permiso: 'admin.calendario_comedor',
-  },
-  {
-    id: 'pagos',
-    label: 'Pagos',
-    permiso: 'admin.pagos',
-  },
-  {
-    id: 'cargasMasivas',
-    label: 'Cargas masivas',
-    permiso: 'admin.cargas_masivas',
-  },
-  {
-    id: 'retroactiva',
-    label: 'Carga retroactiva',
-    permiso: 'admin.carga_retroactiva',
-  },
-  {
-    id: 'notificaciones',
-    label: 'Notificaciones',
-    permiso: 'admin.notificaciones',
-  },
-]
+import { ADMIN_SECCIONES as TABS } from '../../lib/adminSecciones'
+import LogTab from './LogTab'
 
 export default function AdminDashboard() {
   const { user } = useAuth()
@@ -75,9 +24,11 @@ export default function AdminDashboard() {
     tienePermiso(user, tab.permiso)
   )
 
-  const [tab, setTab] = useState(
-    disponibles[0]?.id
-  )
+  // La pestaña activa vive en la URL (?tab=...) para poder entrar desde el menú superior.
+  const [params, setParams] = useSearchParams()
+  const pedida = params.get('tab')
+  const tab = disponibles.some((t) => t.id === pedida) ? pedida : disponibles[0]?.id
+  const setTab = (id) => setParams({ tab: id })
 
   return (
     <div className="admin-page page-shell">
@@ -108,6 +59,8 @@ export default function AdminDashboard() {
 
       <div className="admin-content">
         {tab === 'usuarios' && <UsuariosTab />}
+
+        {tab === 'log' && <LogTab />}
 
         {tab === 'importar' && <ImportarAlumnosTab />}
 
