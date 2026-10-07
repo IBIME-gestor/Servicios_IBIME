@@ -19,7 +19,7 @@ import {
 import { tienePermiso } from '../../lib/permisos'
 import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
-import { calcularCostoEstancia, calcularMinutosEstancia, obtenerConfigEstancia } from '../../lib/pricing'
+import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, obtenerConfigEstancia } from '../../lib/pricing'
 import FirmaPad from '../../components/FirmaPad'
 import CorteEstancia from './CorteEstancia'
 
@@ -39,6 +39,7 @@ export default function Estancia() {
   const [vista, setVista] = useState('operacion') // 'operacion' | 'corte'
   const [pagando, setPagando] = useState(null) // estancia a la que se le elige método de pago
   const [guardandoPago, setGuardandoPago] = useState('')
+  const [ajusteAcuerdo, setAjusteAcuerdo] = useState(false)
   const [texto, setTexto] = useState('')
   const [activos, setActivos] = useState([])
   const [registrosHoy, setRegistrosHoy] = useState([])
@@ -124,12 +125,19 @@ export default function Estancia() {
     }
   }
 
-  async function pagarEstancia(estanciaId, metodoPago) {
+  function abrirPago(estancia) {
+    setAjusteAcuerdo(false)
+    setPagando(estancia)
+  }
+
+  async function pagarEstancia(estanciaId, metodoPago, ajuste = false) {
     setGuardandoPago(estanciaId)
     setError('')
     try {
-      await marcarEstanciaPagada({ estanciaId, usuario: user?.email || user?.uid || 'usuario', metodoPago })
-      const marca = { pagado: true, cargado: true, metodoPago }
+      await marcarEstanciaPagada({ estanciaId, usuario: user?.email || user?.uid || 'usuario', metodoPago, ajusteAcuerdo: ajuste })
+      const marca = ajuste
+        ? { pagado: true, cargado: true, metodoPago: 'ajuste_acuerdo', ajusteAcuerdo: true, costo: 0 }
+        : { pagado: true, cargado: true, metodoPago }
       setRegistrosHoy((lista) => lista.map((e) => (e.id === estanciaId ? { ...e, ...marca } : e)))
       setResultado((actual) => (actual?.estanciaId === estanciaId ? { ...actual, ...marca } : actual))
       setPagando(null)
@@ -235,7 +243,7 @@ export default function Estancia() {
                       {infoAlumno(e) && <span>{infoAlumno(e)}</span>}
                       <span>Entrada: {formatoHora(e.horaEntrada)}</span>
                       {configEstancia && (() => {
-                        const minutosActuales = calcularMinutosEstancia(e.horaEntrada, ahora, configEstancia)
+                        const minutosActuales = calcularMinutosEstancia(e.horaEntrada, ahora, configParaEstancia(e, configEstancia))
                         const preview = calcularCostoEstancia(minutosActuales, configEstancia)
                         return <span className={preview.costo === 0 ? 'text-success' : ''}>
                           {minutosTexto(minutosActuales)} · {preview.costo === 0 ? 'Dentro de gracia' : dineroLocal(preview.costo)}
@@ -279,10 +287,10 @@ export default function Estancia() {
                         <strong>${Number(e.costo || 0).toFixed(2)}</strong>
                         {e.pagado ? (
                           <span className="status-pill status-paid">
-                            ✓ Pagado{e.metodoPago && METODOS_PAGO_ESTANCIA[e.metodoPago] ? ` · ${METODOS_PAGO_ESTANCIA[e.metodoPago].etiqueta}` : ''}
+                            {e.ajusteAcuerdo ? '✓ Ajuste acuerdo' : `✓ Pagado${e.metodoPago && METODOS_PAGO_ESTANCIA[e.metodoPago] ? ` · ${METODOS_PAGO_ESTANCIA[e.metodoPago].etiqueta}` : ''}`}
                           </span>
                         ) : (
-                          <button className="btn btn-primary btn-small" disabled={guardandoPago === e.id} onClick={() => setPagando(e)}>
+                          <button className="btn btn-primary btn-small" disabled={guardandoPago === e.id} onClick={() => abrirPago(e)}>
                             {guardandoPago === e.id ? '…' : 'Pagar'}
                           </button>
                         )}
@@ -315,10 +323,10 @@ export default function Estancia() {
                 <div className="drawer-actions" style={{ justifyContent: 'center' }}>
                   {resultado.pagado ? (
                     <span className="status-pill status-paid">
-                      ✓ Pago registrado{resultado.metodoPago ? ` en ${METODOS_PAGO_ESTANCIA[resultado.metodoPago]?.etiqueta}` : ''} y enviado a Caja
+                      {resultado.ajusteAcuerdo ? '✓ Ajuste acuerdo registrado ($0.00)' : `✓ Pago registrado${resultado.metodoPago ? ` en ${METODOS_PAGO_ESTANCIA[resultado.metodoPago]?.etiqueta}` : ''} y enviado a Caja`}
                     </span>
                   ) : (
-                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => setPagando({ id: resultado.estanciaId, alumnoNombre: retirando.alumnoNombre, costo: resultado.costo })}>
+                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => abrirPago({ id: resultado.estanciaId, alumnoNombre: retirando.alumnoNombre, costo: resultado.costo })}>
                       💳 Pagar
                     </button>
                   )}
@@ -352,22 +360,35 @@ export default function Estancia() {
             <p className="page-muted" style={{ marginTop: '-0.4rem' }}>
               {pagando.alumnoNombre} · <strong>{dineroLocal(pagando.costo)}</strong>
             </p>
-            <div className="pago-opciones">
-              {Object.values(METODOS_PAGO_ESTANCIA).map((m) => (
-                <button
-                  key={m.clave}
-                  type="button"
-                  className="btn btn-primary pago-opcion"
-                  disabled={Boolean(guardandoPago)}
-                  onClick={() => pagarEstancia(pagando.id, m.clave)}
-                >
-                  <span style={{ fontSize: '1.6rem' }}>{m.icono}</span>
-                  {m.etiqueta}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.2rem 0 0.9rem', fontWeight: 700 }}>
+              <input type="checkbox" checked={ajusteAcuerdo} disabled={Boolean(guardandoPago)} onChange={(ev) => setAjusteAcuerdo(ev.target.checked)} />
+              Ajuste acuerdo
+            </label>
+            {ajusteAcuerdo ? (
+              <>
+                <p style={{ fontSize: '0.85rem' }}>Importe: <strong>{dineroLocal(0)}</strong> (antes {dineroLocal(pagando.costo)}). Queda en el historial; no pasa a acciones de Caja ni al corte.</p>
+                <button type="button" className="btn btn-primary" disabled={Boolean(guardandoPago)} onClick={() => pagarEstancia(pagando.id, null, true)}>
+                  {guardandoPago ? 'Guardando…' : 'Aceptar'}
                 </button>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="pago-opciones">
+                {Object.values(METODOS_PAGO_ESTANCIA).map((m) => (
+                  <button
+                    key={m.clave}
+                    type="button"
+                    className="btn btn-primary pago-opcion"
+                    disabled={Boolean(guardandoPago)}
+                    onClick={() => pagarEstancia(pagando.id, m.clave)}
+                  >
+                    <span style={{ fontSize: '1.6rem' }}>{m.icono}</span>
+                    {m.etiqueta}
+                  </button>
+                ))}
+              </div>
+            )}
             <p style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
-              Se refleja como pagado en Caja y queda pendiente en el corte de estancia.
+              {ajusteAcuerdo ? 'Para alumnos con acuerdo o que esperan su taller.' : 'Se refleja como pagado en Caja y queda pendiente en el corte de estancia.'}
             </p>
             <button className="btn btn-outline" disabled={Boolean(guardandoPago)} onClick={() => setPagando(null)}>Cancelar</button>
           </div>
