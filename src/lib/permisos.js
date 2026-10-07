@@ -1,7 +1,4 @@
-```jsx
-// Catálogo central de permisos.
-// Cada usuario guarda en Firestore un array `permisos` con las claves
-// que tiene activas. El permiso especial "admin" desbloquea TODO.
+// src/lib/permisos.js
 
 export const PERMISO_ADMIN = 'admin'
 
@@ -60,7 +57,8 @@ export const CATALOGO_PERMISOS = [
       {
         clave: 'caja.asignar_plan_comedor',
         etiqueta: 'Asignar planes de comedor',
-        descripcion: 'Permite asignar mensualidades de comedor a un alumno desde Caja.',
+        descripcion:
+          'Permite asignar mensualidades de comedor a un alumno desde Caja.',
       },
     ],
   },
@@ -91,12 +89,14 @@ export const CATALOGO_PERMISOS = [
       {
         clave: 'admin.planes_comedor',
         etiqueta: 'Gestionar planes de comedor',
-        descripcion: 'Crear, editar, activar y desactivar planes del catálogo de comedor.',
+        descripcion:
+          'Crear, editar, activar y desactivar planes del catálogo de comedor.',
       },
       {
         clave: 'admin.calendario_comedor',
         etiqueta: 'Configurar calendario y vacaciones',
-        descripcion: 'Definir días de suspensión/vacaciones que se descuentan de los días de consumo.',
+        descripcion:
+          'Definir días de suspensión/vacaciones que se descuentan de los días de consumo.',
       },
       {
         clave: 'admin.pagos',
@@ -106,33 +106,28 @@ export const CATALOGO_PERMISOS = [
       {
         clave: 'admin.cargas_masivas',
         etiqueta: 'Cargas masivas de servicios',
-        descripcion: 'Permite cargar masivamente servicios de comedor y estancias. Esta función pertenece exclusivamente a Administración.',
+        descripcion:
+          'Permite cargar masivamente servicios de comedor y estancias. Esta función pertenece exclusivamente a Administración.',
       },
       {
         clave: 'admin.carga_retroactiva',
-        etiqueta: 'Hacer cargas retroactivas de comedor y estancia',
-        descripcion: 'Permite capturar servicios de una fecha y hora anteriores conservando la fecha real de captura.',
+        etiqueta:
+          'Hacer cargas retroactivas de comedor y estancia',
+        descripcion:
+          'Permite capturar servicios de una fecha y hora anteriores conservando la fecha real de captura.',
       },
       {
         clave: 'admin.notificaciones',
         etiqueta: 'Gestionar notificaciones semanales',
-        descripcion: 'Cargar plantilla HTML y preparar envíos de resumen a padres/tutores.',
+        descripcion:
+          'Cargar plantilla HTML y preparar envíos de resumen a padres/tutores.',
       },
     ],
   },
 ]
 
-/**
- * Permisos con los que arranca cualquier persona nueva.
- * Solo puede consultar alumnos hasta que un administrador
- * le conceda más permisos.
- */
 export const PERMISOS_COLABORADOR = ['alumnos.ver']
 
-/**
- * true si el usuario tiene ese permiso,
- * o si es administrador, que tiene todos.
- */
 export function tienePermiso(user, clave) {
   if (!user?.permisos) return false
 
@@ -141,4 +136,3 @@ export function tienePermiso(user, clave) {
     user.permisos.includes(clave)
   )
 }
-```
