@@ -24,8 +24,12 @@ export default function ConfigEstanciaTab() {
         <h3 style={{ marginTop: 0 }}>🏫 Tarifas de estancia</h3>
         <p style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>El cálculo se hace por bloques: hasta 30 min, después horas completas y un bloque final de 30 min cuando corresponda.</p>
 
-        <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Hora en que inicia la estancia escolar</label>
-        <input className="input" type="time" value={config.horaInicio} onChange={e => setConfig({ ...config, horaInicio: e.target.value })} style={{ marginBottom: '0.8rem' }} />
+        <h4 style={{ margin: '0 0 0.4rem' }}>Hora de inicio de estancia por nivel</h4>
+        <p style={{ color: 'var(--ink-muted)', fontSize: '0.78rem', marginTop: 0 }}>Al registrar la entrada se toma el nivel del alumno para saber desde qué hora cuenta su estancia.</p>
+        <HoraNivel label="Preescolar" value={config.horaInicioPreescolar} onChange={v => setConfig({ ...config, horaInicioPreescolar: v })} />
+        <HoraNivel label="Primaria" value={config.horaInicioPrimaria} onChange={v => setConfig({ ...config, horaInicioPrimaria: v })} />
+        <HoraNivel label="Secundaria" value={config.horaInicioSecundaria} onChange={v => setConfig({ ...config, horaInicioSecundaria: v })} />
+        <HoraNivel label="Otro / sin nivel reconocido (respaldo)" value={config.horaInicio} onChange={v => setConfig({ ...config, horaInicio: v })} />
 
         <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Minutos de gracia</label>
         <input className="input" type="number" min={0} value={config.minutosGracia} onChange={e => setConfig({ ...config, minutosGracia: Number(e.target.value) })} style={{ marginBottom: '0.8rem' }} />
@@ -55,4 +59,8 @@ export default function ConfigEstanciaTab() {
 
 function Tarifa({ label, value, onChange }) {
   return <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.8rem' }}>{label}<input className="input" type="number" min={0} step="0.01" value={value ?? 0} onChange={e => onChange(e.target.value)} style={{ marginTop: '0.3rem' }} /></label>
+}
+
+function HoraNivel({ label, value, onChange }) {
+  return <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.8rem' }}>{label}<input className="input" type="time" value={value || ''} onChange={e => onChange(e.target.value)} style={{ marginTop: '0.3rem' }} /></label>
 }
