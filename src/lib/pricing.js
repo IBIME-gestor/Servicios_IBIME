@@ -1,8 +1,12 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
+import { normalizar } from './alumnos'
 
 export const CONFIG_ESTANCIA_DEFAULT = {
-  horaInicio: '14:00',
+  horaInicio: '14:00', // respaldo si el alumno no tiene nivel reconocido
+  horaInicioPreescolar: '14:00',
+  horaInicioPrimaria: '14:00',
+  horaInicioSecundaria: '14:00',
   minutosGracia: 0,
   costo30Min: 0,
   costo1Hora: 0,
@@ -21,6 +25,9 @@ export async function guardarConfigEstancia(config) {
   const ref = doc(db, 'config', 'estancia')
   await setDoc(ref, {
     ...config,
+    horaInicioPreescolar: config.horaInicioPreescolar || config.horaInicio || '14:00',
+    horaInicioPrimaria: config.horaInicioPrimaria || config.horaInicio || '14:00',
+    horaInicioSecundaria: config.horaInicioSecundaria || config.horaInicio || '14:00',
     minutosGracia: Number(config.minutosGracia || 0),
     costo30Min: Number(config.costo30Min || 0),
     costo1Hora: Number(config.costo1Hora || 0),
@@ -71,21 +78,50 @@ export function minutosEntre(inicio, fin) {
   return Math.round((fin.getTime() - inicio.getTime()) / 60000)
 }
 
+/** Clasifica el nivel del alumno: 'preescolar' | 'primaria' | 'secundaria' | null. */
+export function claveNivelEstancia(nivel) {
+  const n = normalizar(nivel)
+  if (!n) return null
+  if (/(prees|kinder|maternal|jardin)/.test(n)) return 'preescolar'
+  if (n.includes('prim')) return 'primaria'
+  if (n.includes('sec')) return 'secundaria'
+  return null
+}
+
+/** Hora ("HH:MM") en que empieza a contar la estancia para un nivel. */
+export function horaInicioPorNivel(nivel, config = CONFIG_ESTANCIA_DEFAULT) {
+  const clave = claveNivelEstancia(nivel)
+  const porNivel = {
+    preescolar: config.horaInicioPreescolar,
+    primaria: config.horaInicioPrimaria,
+    secundaria: config.horaInicioSecundaria,
+  }[clave]
+  return porNivel || config.horaInicio || '00:00'
+}
+
 /**
- * Momento real a partir del cual empieza a correr la estancia.
- * La configuración de horaInicio manda; si el alumno entró después,
- * el conteo empieza en su entrada. Si entró antes, empieza en la hora escolar configurada.
+ * Config lista para calcular una estancia concreta. Si el registro ya guardó
+ * la hora de inicio con la que se abrió (horaInicioConteo), esa manda; si no,
+ * se deduce del nivel del alumno (alumnoNivel).
+ */
+export function configParaEstancia(estancia, config = CONFIG_ESTANCIA_DEFAULT) {
+  const hora = estancia?.horaInicioConteo || horaInicioPorNivel(estancia?.alumnoNivel, config)
+  return { ...config, horaInicio: hora }
+}
+
+/**
+ * Momento a partir del cual empieza a correr la estancia: la hora de inicio
+ * configurada (ya resuelta por nivel en config.horaInicio) del día indicado.
  */
 export function inicioEfectivoEstancia(horaEntrada, fecha, config = CONFIG_ESTANCIA_DEFAULT) {
   const entrada = new Date(horaEntrada)
   const inicio = new Date(fecha || entrada)
   const [horas, minutos] = String(config.horaInicio || '00:00').split(':').map(Number)
   inicio.setHours(Number.isFinite(horas) ? horas : 0, Number.isFinite(minutos) ? minutos : 0, 0, 0)
-  // El reloj de estancia comienza en la hora configurada, no al momento
-  // de pulsar "registrar". Si alguien entra antes, el tiempo no puede ser negativo.
   return inicio
 }
 
+/** `config` debe venir de configParaEstancia() para respetar el horario del nivel. */
 export function calcularMinutosEstancia(horaEntrada, ahora, config = CONFIG_ESTANCIA_DEFAULT) {
   const fin = new Date(ahora)
   const inicio = inicioEfectivoEstancia(horaEntrada, fin, config)
