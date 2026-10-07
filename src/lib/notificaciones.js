@@ -38,7 +38,7 @@ function reemplazarPlantilla(template, alumno, detalles, totals) {
   const estanciasHtml = detalles.estancias.map(e => `<tr><td>${e.fecha}</td><td>${e.entrada} - ${e.salida}</td><td>${e.minutos} min</td><td>$${e.costo.toFixed(2)}</td></tr>`).join('')
   const valores = {
     NOMBRE_ALUMNO: alumno.nombre || '', MATRICULA: alumno.matricula || '', GRADO: alumno.grado || '', GRUPO: alumno.grupo || '', PLANTEL: alumno.plantel || '', NIVEL: alumno.nivel || '', TUTOR: alumno.tutor || '',
-    CORREO_ALUMNO: alumno.correoAlumno || '', CONSUMOS_CAFETERIA: consumosHtml, ESTANCIAS: estanciasHtml,
+    CORREO_ALUMNO: alumno.correoAlumno || '', CORREO_TUTOR: alumno.correoTutor || '', CONSUMOS_CAFETERIA: consumosHtml, ESTANCIAS: estanciasHtml,
     TOTAL_COMEDOR: totals.comedor.toFixed(2), TOTAL_ESTANCIA: totals.estancia.toFixed(2), TOTAL_ESTIMADO: totals.total.toFixed(2),
     MENSAJE_COMETA: 'Verifique en Cometa que el saldo ya esté disponible para realizar el pago.',
     SEMANA: `${detalles.semanaInicio} al ${detalles.semanaFin}`,
@@ -51,7 +51,8 @@ export async function prepararNotificacionesSemana({ asunto, htmlTemplate, usuar
   if (!htmlTemplate?.trim()) throw new Error('Primero carga una plantilla HTML.')
   const [alumnos, consumos, estancias, config] = await Promise.all([listarAlumnosActivos(), consumosSemanaTodos(), estanciasSemanaTodas(), obtenerConfigComedor()])
   const { lunes, domingo, clave } = semanaActual()
-  const payload = alumnos.filter(a => a.contacto).map(alumno => {
+  const destinatarios = (a) => Array.from(new Set([a.correoTutor, a.correoAlumno].map(x => String(x || '').trim().toLowerCase()).filter(Boolean)))
+  const payload = alumnos.filter(a => destinatarios(a).length).map(alumno => {
     const cs = consumos.filter(c => c.alumnoId === alumno.id)
     const es = estancias.filter(e => e.alumnoId === alumno.id && e.horaSalida)
     const consumosDet = cs.map(c => ({ fecha: c.fecha?.toLocaleDateString('es-MX') || '', tipo: c.tipo === 'desayuno' ? 'Desayuno' : 'Comida', costo: costoConsumo(c, config) }))
@@ -59,7 +60,7 @@ export async function prepararNotificacionesSemana({ asunto, htmlTemplate, usuar
     const comedor = consumosDet.reduce((s,c)=>s+c.costo,0)
     const estancia = estanciasDet.reduce((s,e)=>s+e.costo,0)
     return {
-      to: alumno.contacto,
+      to: destinatarios(alumno).join(','),
       subject: asunto || 'Resumen semanal de servicios IBIME',
       htmlBody: reemplazarPlantilla(htmlTemplate, alumno, { consumos: consumosDet, estancias: estanciasDet, semanaInicio: lunes.toLocaleDateString('es-MX'), semanaFin: domingo.toLocaleDateString('es-MX') }, { comedor, estancia, total: comedor+estancia }),
       alumnoId: alumno.id,
