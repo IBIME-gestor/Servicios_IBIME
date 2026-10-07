@@ -388,3 +388,9 @@ a { color: var(--navy-500); }
 :is(.page-shell, .caja-kpis, .caja-summary-list, .cafeteria-daily-list, .estancia-daily-list, .estancia-active-list, .admin-tabs, .caja-table tbody, .estancia-layout, .cafeteria-layout) > :nth-child(n+7) { animation-delay: .26s; }
 .card { transition: box-shadow .2s ease, transform .2s ease; }
 @media (prefers-reduced-motion: reduce) { .cajon-item { opacity: 1; } }
+
+/* ===== Alumnos: filtros y paginación ===== */
+.alumnos-filtros { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(120px, 1fr)) auto auto; gap: .6rem; margin-bottom: 1rem; align-items: center; }
+.alumnos-paginacion { display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap; margin-bottom: .6rem; }
+@media (max-width: 1000px) { .alumnos-filtros { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .alumnos-filtros { grid-template-columns: 1fr; } }
