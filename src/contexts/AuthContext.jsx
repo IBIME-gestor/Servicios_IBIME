@@ -38,6 +38,9 @@ export function AuthProvider({ children }) {
         return
       }
 
+      // Mientras se lee el perfil, las rutas privadas deben esperar (no redirigir a /login).
+      setLoading(true)
+
       // Verificación de dominio también en el cliente (además del `hd` que
       // ya filtra en la pantalla de Google, por si alguien intenta forzarlo).
       const dominioCuenta = fbUser.email.split('@')[1]
