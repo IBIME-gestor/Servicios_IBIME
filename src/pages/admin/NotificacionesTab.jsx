@@ -48,7 +48,7 @@ export default function NotificacionesTab() {
     </div>
     <div className="card" style={{padding:'1.25rem'}}>
       <h3 style={{marginTop:0}}>2. Preparar envío semanal</h3>
-      <p style={{fontSize:'0.85rem',color:'var(--ink-muted)'}}>El correo se genera con el detalle del alumno y se enviará desde la cuenta institucional mediante Apps Script. Se toma el correo del padre/madre/tutor guardado en la base.</p>
+      <p style={{fontSize:'0.85rem',color:'var(--ink-muted)'}}>El correo se genera con el detalle del alumno y se enviará desde la cuenta institucional mediante Apps Script. Se envía al correo del tutor y al del alumno (los dos que estén capturados en la base).</p>
       <label style={{display:'block',fontSize:'0.82rem'}}>Enviar después de<input className="input" type="datetime-local" value={fechaEnvio} onChange={e=>setFechaEnvio(e.target.value)} style={{maxWidth:280}}/></label>
       <button className="btn btn-primary" style={{marginTop:'0.9rem'}} disabled={guardando||!fechaEnvio||!plantilla.trim()} onClick={programar}>{guardando?'Preparando…':'Preparar semana y programar envío'}</button>
     </div>
