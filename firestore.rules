@@ -94,7 +94,7 @@ service cloud.firestore {
 
     match /config/{docId} {
       allow read: if estaAutenticado();
-      allow write: if (docId == 'notificaciones' && tengoPermiso('admin.notificaciones')) || tengoPermiso('admin.config_estancia') || tengoPermiso('admin.config_comedor') || (docId == 'calendario' && tengoPermiso('admin.calendario_comedor'));
+      allow write: if (docId == 'notificaciones' && tengoPermiso('admin.notificaciones')) || (docId == 'catalogo_alumnos' && tengoPermiso('admin.importar')) || tengoPermiso('admin.config_estancia') || tengoPermiso('admin.config_comedor') || (docId == 'calendario' && tengoPermiso('admin.calendario_comedor'));
     }
 
     // Registro semanal de cobro por alumno (casillas de "capturado" y
