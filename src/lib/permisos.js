@@ -43,6 +43,12 @@ export const CATALOGO_PERMISOS = [
         etiqueta: 'Registrar llegadas y retiros',
         descripcion: '',
       },
+      {
+        clave: 'estancia.corte',
+        etiqueta: 'Hacer corte de estancia (efectivo / Cometa)',
+        descripcion:
+          'Ver lo cobrado en estancia por método de pago y hacer el corte para entregarlo.',
+      },
     ],
   },
 
