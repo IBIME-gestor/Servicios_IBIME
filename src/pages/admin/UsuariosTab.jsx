@@ -3,6 +3,7 @@ import { listarUsuarios, actualizarPermisosUsuario, actualizarActivoUsuario } fr
 import { CATALOGO_PERMISOS, PERMISO_ADMIN, PERMISOS_COLABORADOR } from '../../lib/permisos'
 import { useAuth } from '../../contexts/AuthContext'
 import { listarPlanteles, PLANTEL_TODOS } from '../../lib/alumnos'
+import { registrarLog } from '../../lib/log'
 
 export default function UsuariosTab() {
   const { user: yo } = useAuth()
@@ -94,6 +95,7 @@ export default function UsuariosTab() {
 }
 
 function EditorPermisos({ usuario, planteles, esUnoMismo, onCerrar, onGuardado }) {
+  const { user: yo } = useAuth()
   const [permisos, setPermisos] = useState(usuario.permisos || PERMISOS_COLABORADOR)
   const [activo, setActivo] = useState(usuario.activo !== false)
   const [plantel, setPlantel] = useState(usuario.plantel || '')
@@ -115,6 +117,10 @@ function EditorPermisos({ usuario, planteles, esUnoMismo, onCerrar, onGuardado }
       if (activo !== (usuario.activo !== false)) {
         await actualizarActivoUsuario(usuario.id, activo)
       }
+      registrarLog({
+        user: yo, accion: 'admin.usuario_actualizar', modulo: 'admin', entidad: 'usuarios', entidadId: usuario.id,
+        detalle: { correoAfectado: usuario.email, permisosAntes: usuario.permisos || [], permisosDespues: permisos, plantelAntes: usuario.plantel || '', plantelDespues: plantel, activo },
+      })
       onGuardado()
     } finally {
       setGuardando(false)
