@@ -1,4 +1,3 @@
-```jsx
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { useAuth } from './contexts/AuthContext'
@@ -137,4 +136,3 @@ export default function App() {
     </Routes>
   )
 }
-```
