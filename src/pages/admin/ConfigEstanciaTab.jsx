@@ -19,13 +19,13 @@ export default function ConfigEstanciaTab() {
     try { await guardarConfigEstancia(config); registrarLog({ user, accion: 'admin.config_estancia', modulo: 'admin', entidad: 'config', entidadId: 'estancia', detalle: config }); setGuardado(true) } finally { setGuardando(false) }
   }
 
-  const ejemplos = [30, 60, 75, 90, 125].map(min => ({ min, ...calcularCostoEstancia(min, config) }))
+  const ejemplos = [30, 42, 60, 75, 90, 105, 125].map(min => ({ min, ...calcularCostoEstancia(min, config) }))
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '390px 1fr', gap: '1.25rem', alignItems: 'start' }}>
       <form onSubmit={handleGuardar} className="card" style={{ padding: '1.25rem' }}>
         <h3 style={{ marginTop: 0 }}>🏫 Tarifas de estancia</h3>
-        <p style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>El cálculo se hace por bloques: hasta 30 min, después horas completas y un bloque final de 30 min cuando corresponda.</p>
+        <p style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>El cálculo se hace por bloques: 1-30 min, 31-60 min, y después horas completas con un bloque final de 1-30 o 31-60 min cuando corresponda.</p>
 
         <h4 style={{ margin: '0 0 0.4rem' }}>Hora de inicio de estancia por nivel</h4>
         <p style={{ color: 'var(--ink-muted)', fontSize: '0.78rem', marginTop: 0 }}>Al registrar la entrada se toma el nivel del alumno para saber desde qué hora cuenta su estancia.</p>
@@ -38,6 +38,7 @@ export default function ConfigEstanciaTab() {
         <input className="input" type="number" min={0} value={config.minutosGracia} onChange={e => setConfig({ ...config, minutosGracia: Number(e.target.value) })} style={{ marginBottom: '0.8rem' }} />
 
         <Tarifa label="Estancia de 1 a 30 minutos" value={config.costo30Min} onChange={v => setConfig({ ...config, costo30Min: Number(v) })} />
+        <Tarifa label="Estancia de 31 a 60 minutos (si lo dejas en 0 se cobra como 1 hora)" value={config.costo31a60Min} onChange={v => setConfig({ ...config, costo31a60Min: Number(v) })} />
         <Tarifa label="Estancia por 1 hora" value={config.costo1Hora} onChange={v => setConfig({ ...config, costo1Hora: Number(v) })} />
 
         <h4 style={{ marginBottom: '0.6rem' }}>Mensualidades</h4>
@@ -53,7 +54,7 @@ export default function ConfigEstanciaTab() {
         <h3 style={{ marginTop: 0 }}>Vista previa</h3>
         {ejemplos.map(e => <div key={e.min} style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--border)' }}><strong>{e.min} minutos</strong><div style={{ fontSize: '0.9rem' }}>{dinero(e.costo)}</div><div style={{ color: 'var(--ink-muted)', fontSize: '0.8rem' }}>{e.desglose}</div></div>)}
         <div style={{ marginTop: '1rem', padding: '0.8rem', background: 'var(--surface-sunken)', borderRadius: 8, fontSize: '0.82rem' }}>
-          <strong>Ejemplo solicitado:</strong> 1 h 25 min se cobra como <strong>1 hora + 30 minutos</strong>. 2 h 25 min = 2 horas + 30 minutos.
+          <strong>Ejemplos:</strong> 42 min = bloque de 31 a 60. 1 h 25 min = <strong>1 hora + 30 minutos</strong>. 1 h 45 min = 1 hora + bloque de 31 a 60.
         </div>
       </div>
     </div>
