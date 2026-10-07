@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { listarUsuarios, actualizarPermisosUsuario, actualizarActivoUsuario } from '../../lib/usuarios'
 import { CATALOGO_PERMISOS, PERMISO_ADMIN, PERMISOS_COLABORADOR } from '../../lib/permisos'
 import { useAuth } from '../../contexts/AuthContext'
+import { listarPlanteles, PLANTEL_TODOS } from '../../lib/alumnos'
 
 export default function UsuariosTab() {
   const { user: yo } = useAuth()
   const [usuarios, setUsuarios] = useState([])
   const [cargando, setCargando] = useState(true)
   const [editando, setEditando] = useState(null) // usuario seleccionado para editar permisos
+  const [planteles, setPlanteles] = useState([])
 
   async function cargar() {
     setCargando(true)
@@ -17,6 +19,7 @@ export default function UsuariosTab() {
 
   useEffect(() => {
     cargar()
+    listarPlanteles().then(setPlanteles).catch(() => setPlanteles([]))
   }, [])
 
   return (
@@ -38,6 +41,7 @@ export default function UsuariosTab() {
               <tr style={{ textAlign: 'left', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
                 <th style={{ padding: '0.4rem' }}>Nombre</th>
                 <th style={{ padding: '0.4rem' }}>Correo</th>
+                <th style={{ padding: '0.4rem' }}>Plantel</th>
                 <th style={{ padding: '0.4rem' }}>Permisos</th>
                 <th style={{ padding: '0.4rem' }}></th>
               </tr>
@@ -47,6 +51,15 @@ export default function UsuariosTab() {
                 <tr key={u.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ padding: '0.5rem 0.4rem' }}>{u.nombre}</td>
                   <td style={{ padding: '0.5rem 0.4rem', color: 'var(--ink-muted)' }}>{u.email}</td>
+                  <td style={{ padding: '0.5rem 0.4rem', fontSize: '0.85rem' }}>
+                    {u.permisos?.includes(PERMISO_ADMIN) || u.plantel === PLANTEL_TODOS ? (
+                      <span style={{ color: 'var(--ink-muted)' }}>Todos</span>
+                    ) : u.plantel ? (
+                      u.plantel
+                    ) : (
+                      <span style={{ color: 'var(--red-600)', fontWeight: 700 }}>Sin asignar</span>
+                    )}
+                  </td>
                   <td style={{ padding: '0.5rem 0.4rem', fontSize: '0.85rem' }}>
                     {u.permisos?.includes(PERMISO_ADMIN) ? (
                       <span style={{ fontWeight: 700, color: 'var(--red-600)' }}>Administrador</span>
@@ -65,6 +78,7 @@ export default function UsuariosTab() {
           {editando && (
             <EditorPermisos
               usuario={editando}
+              planteles={planteles}
               esUnoMismo={editando.id === yo?.uid}
               onCerrar={() => setEditando(null)}
               onGuardado={async () => {
@@ -79,9 +93,10 @@ export default function UsuariosTab() {
   )
 }
 
-function EditorPermisos({ usuario, esUnoMismo, onCerrar, onGuardado }) {
+function EditorPermisos({ usuario, planteles, esUnoMismo, onCerrar, onGuardado }) {
   const [permisos, setPermisos] = useState(usuario.permisos || PERMISOS_COLABORADOR)
   const [activo, setActivo] = useState(usuario.activo !== false)
+  const [plantel, setPlantel] = useState(usuario.plantel || '')
   const [guardando, setGuardando] = useState(false)
   const esAdmin = permisos.includes(PERMISO_ADMIN)
 
@@ -96,7 +111,7 @@ function EditorPermisos({ usuario, esUnoMismo, onCerrar, onGuardado }) {
   async function guardar() {
     setGuardando(true)
     try {
-      await actualizarPermisosUsuario(usuario.id, permisos)
+      await actualizarPermisosUsuario(usuario.id, permisos, plantel)
       if (activo !== (usuario.activo !== false)) {
         await actualizarActivoUsuario(usuario.id, activo)
       }
@@ -120,6 +135,22 @@ function EditorPermisos({ usuario, esUnoMismo, onCerrar, onGuardado }) {
           No puedes quitarte tu propio acceso de administrador desde aquí.
         </p>
       )}
+
+      <div style={{ marginBottom: '1rem', opacity: esAdmin ? 0.45 : 1, pointerEvents: esAdmin ? 'none' : 'auto' }}>
+        <label className="field-label">Plantel al que pertenece</label>
+        <select className="input" value={plantel} onChange={(e) => setPlantel(e.target.value)}>
+          <option value="">— Sin asignar (no verá alumnos) —</option>
+          <option value={PLANTEL_TODOS}>Todos los planteles</option>
+          {Array.from(new Set([...planteles, ...(plantel && plantel !== PLANTEL_TODOS ? [plantel] : [])])).map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+        <p style={{ fontSize: '0.78rem', color: 'var(--ink-muted)', margin: '0.35rem 0 0' }}>
+          {planteles.length === 0
+            ? 'Aún no hay planteles: se detectan al importar el Excel de alumnos.'
+            : 'Solo verá y operará la información de este plantel. El administrador siempre ve todos.'}
+        </p>
+      </div>
 
       <div style={{ opacity: esAdmin ? 0.45 : 1, pointerEvents: esAdmin ? 'none' : 'auto' }}>
         {CATALOGO_PERMISOS.map((grupo) => (
