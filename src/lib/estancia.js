@@ -13,15 +13,19 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { rangoSemanaActual } from './fechas'
-import { calcularCostoEstancia, calcularMinutosEstancia, obtenerConfigEstancia } from './pricing'
+import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, horaInicioPorNivel, obtenerConfigEstancia } from './pricing'
 import { subirArchivoADrive } from './googleDrive'
 
 /** Registra la llegada de un alumno a estancia (abre el registro). */
 export async function iniciarEstancia({ alumno, registradoPor, horaEntrada = null, retroactivo = false }) {
+  // Según el nivel del alumno se define desde qué hora corre su estancia.
+  const config = await obtenerConfigEstancia()
   const ref = await addDoc(collection(db, 'estancias'), {
     alumnoId: alumno.id,
     alumnoNombre: alumno.nombre,
     alumnoGrupo: alumno.grupo || '',
+    alumnoNivel: alumno.nivel || '',
+    horaInicioConteo: horaInicioPorNivel(alumno.nivel, config),
     horaEntrada: horaEntrada ? Timestamp.fromDate(horaEntrada) : serverTimestamp(),
     horaSalida: null,
     minutos: null,
@@ -78,7 +82,7 @@ export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob, ho
   const horaEntrada = data.horaEntrada.toDate()
   const ahora = horaSalida || new Date()
   const config = await obtenerConfigEstancia()
-  const minutos = calcularMinutosEstancia(horaEntrada, ahora, config)
+  const minutos = calcularMinutosEstancia(horaEntrada, ahora, configParaEstancia(data, config))
   if (minutos < 0) throw new Error('La hora de retiro no puede ser anterior a la hora de entrada.')
   const { costo, desglose } = calcularCostoEstancia(minutos, config)
 
@@ -141,18 +145,32 @@ export async function estanciasSemanaTodas() {
 }
 
 
-/** Marca una estancia cerrada como pagada desde el módulo de Estancia. */
-export async function marcarEstanciaPagada({ estanciaId, usuario }) {
+/**
+ * Marca una estancia cerrada como pagada desde el módulo de Estancia.
+ * Con `ajusteAcuerdo` el importe pasa a $0 (el original se conserva en
+ * costoOriginal), no se pide método de pago y NO entra a acciones de Caja
+ * ni al corte: solo queda en el historial.
+ */
+export async function marcarEstanciaPagada({ estanciaId, usuario, metodoPago = null, ajusteAcuerdo = false }) {
   const ref = doc(db, 'estancias', estanciaId)
   const snap = await getDoc(ref)
   if (!snap.exists()) throw new Error('La estancia ya no existe.')
   const data = snap.data()
   if (!data.horaSalida) throw new Error('No se puede registrar el pago mientras la estancia siga abierta.')
   if (data.pagado) return { ...data, pagado: true }
-  await updateDoc(ref, {
-    pagado: true,
-    pagadoPor: usuario || 'usuario',
-    fechaPagado: serverTimestamp(),
-  })
-  return { ...data, pagado: true }
+
+  const base = { pagado: true, cargado: true, pagadoPor: usuario || 'usuario', fechaPagado: serverTimestamp() }
+  if (ajusteAcuerdo) {
+    const cambios = {
+      ...base,
+      ajusteAcuerdo: true,
+      costoOriginal: Number(data.costo || 0),
+      costo: 0,
+      metodoPago: 'ajuste_acuerdo',
+    }
+    await updateDoc(ref, cambios)
+    return { ...data, ...cambios }
+  }
+  await updateDoc(ref, { ...base, ...(metodoPago ? { metodoPago } : {}) })
+  return { ...data, pagado: true, metodoPago }
 }
