@@ -4,17 +4,25 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
   serverTimestamp,
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { rangoSemanaActual } from './fechas'
 import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, horaInicioPorNivel, obtenerConfigEstancia } from './pricing'
 import { subirArchivoADrive } from './googleDrive'
+
+/** Métodos de pago que se cobran directo en Estancia (fuera de Caja) y entran al corte. */
+export const METODOS_PAGO_ESTANCIA = {
+  efectivo: { clave: 'efectivo', etiqueta: 'Efectivo', icono: '💵' },
+  cometa: { clave: 'cometa', etiqueta: 'Cometa', icono: '💳' },
+}
 
 /** Registra la llegada de un alumno a estancia (abre el registro). */
 export async function iniciarEstancia({ alumno, registradoPor, horaEntrada = null, retroactivo = false }) {
@@ -173,4 +181,72 @@ export async function marcarEstanciaPagada({ estanciaId, usuario, metodoPago = n
   }
   await updateDoc(ref, { ...base, ...(metodoPago ? { metodoPago } : {}) })
   return { ...data, pagado: true, metodoPago }
+}
+
+const aFecha = (v) => (v?.toDate ? v.toDate() : v || null)
+
+/**
+ * Estancias pagadas en efectivo o Cometa que todavía no se incluyen en un corte.
+ * Los "Ajuste acuerdo" (importe $0, sin método de pago) nunca entran.
+ */
+export async function estanciasPendientesDeCorte() {
+  const q = query(collection(db, 'estancias'), where('pagado', '==', true))
+  const snap = await getDocs(q)
+  return snap.docs
+    .map((d) => {
+      const x = d.data()
+      return {
+        id: d.id,
+        ...x,
+        horaEntrada: aFecha(x.horaEntrada),
+        horaSalida: aFecha(x.horaSalida),
+        fechaPagado: aFecha(x.fechaPagado),
+      }
+    })
+    .filter((e) => !e.ajusteAcuerdo && !e.corteId && METODOS_PAGO_ESTANCIA[e.metodoPago])
+    .sort((a, b) => (a.fechaPagado?.getTime() || 0) - (b.fechaPagado?.getTime() || 0))
+}
+
+/** Registra el corte y marca cada estancia incluida con corteId/corteEn. */
+export async function crearCorteEstancia({ estancias, usuarioEmail, usuarioNombre, plantel }) {
+  if (!estancias?.length) throw new Error('No hay cobros para el corte.')
+  const monto = (e) => Number(e.costo) || 0
+  const suma = (lista) => lista.reduce((t, e) => t + monto(e), 0)
+  const efectivo = estancias.filter((e) => e.metodoPago === 'efectivo')
+  const cometa = estancias.filter((e) => e.metodoPago === 'cometa')
+
+  const corteRef = await addDoc(collection(db, 'cortes_estancia'), {
+    creadoEn: serverTimestamp(),
+    creadoPor: usuarioEmail || 'usuario',
+    creadoPorNombre: usuarioNombre || usuarioEmail || 'usuario',
+    plantel: plantel || '',
+    cantidad: estancias.length,
+    total: suma(estancias),
+    totalEfectivo: suma(efectivo),
+    totalCometa: suma(cometa),
+    detalle: estancias.map((e) => ({
+      id: e.id,
+      alumno: e.alumnoNombre || '',
+      metodoPago: e.metodoPago,
+      costo: monto(e),
+      fechaPagado: e.fechaPagado ? new Date(e.fechaPagado).toISOString() : null,
+    })),
+  })
+
+  // Firestore permite 500 escrituras por lote.
+  for (let i = 0; i < estancias.length; i += 400) {
+    const lote = writeBatch(db)
+    estancias.slice(i, i + 400).forEach((e) => {
+      lote.update(doc(db, 'estancias', e.id), { corteId: corteRef.id, corteEn: serverTimestamp() })
+    })
+    await lote.commit()
+  }
+  return corteRef.id
+}
+
+/** Últimos cortes hechos, del más reciente al más antiguo. */
+export async function listarCortesEstancia(max = 30) {
+  const q = query(collection(db, 'cortes_estancia'), orderBy('creadoEn', 'desc'), limit(max))
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...d.data(), creadoEn: aFecha(d.data().creadoEn) }))
 }
