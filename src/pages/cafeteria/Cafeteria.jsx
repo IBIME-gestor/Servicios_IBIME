@@ -8,6 +8,8 @@ import {
   sinPlantelAsignado,
 } from '../../lib/alumnos'
 import { registrarConsumo, consumosSemanaAlumno } from '../../lib/consumos'
+import { consumosDelDia } from '../../lib/cargaRetroactiva'
+import { registrarLog } from '../../lib/log'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
 import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 import { tienePermiso } from '../../lib/permisos'
@@ -21,7 +23,8 @@ export default function Cafeteria() {
   const [registrando, setRegistrando] = useState(false)
   const [aviso, setAviso] = useState('')
   const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false)
-  const [capturasHoy, setCapturasHoy] = useState([])
+  const [consumosHoy, setConsumosHoy] = useState([])
+  const [soloMias, setSoloMias] = useState(false)
 
   useEffect(() => {
     listarAlumnosActivos().then(setAlumnosTodos)
@@ -29,6 +32,37 @@ export default function Cafeteria() {
 
   // Cada usuario solo ve y captura alumnos de su plantel.
   const alumnos = useMemo(() => filtrarPorPlantel(alumnosTodos, user), [alumnosTodos, user])
+  const mapaAlumnos = useMemo(() => new Map(alumnos.map((a) => [a.id, a])), [alumnos])
+
+  // Las capturas del día salen de Firestore, así que no se pierden al cambiar de módulo.
+  async function cargarCapturasHoy() {
+    try {
+      setConsumosHoy(await consumosDelDia(new Date()))
+    } catch (err) {
+      console.error(err)
+    }
+  }
+  useEffect(() => { cargarCapturasHoy() }, [])
+
+  const capturasHoy = useMemo(() => {
+    return consumosHoy
+      .filter((c) => mapaAlumnos.has(c.alumnoId))
+      .filter((c) => (soloMias ? c.registradoPor === user?.uid : true))
+      .map((c) => {
+        const a = mapaAlumnos.get(c.alumnoId)
+        return {
+          id: c.id,
+          nombre: c.alumnoNombre || a?.nombre || '',
+          grupo: c.alumnoGrupo || a?.grupo || '',
+          matricula: a?.matricula || '',
+          descripcion: descripcionAlumno(a, { matricula: false }),
+          tipo: c.tipo,
+          hora: c.capturadoEn?.toDate?.() || c.fecha,
+          propia: c.registradoPor === user?.uid,
+        }
+      })
+      .sort((x, y) => (y.hora?.getTime?.() || 0) - (x.hora?.getTime?.() || 0))
+  }, [consumosHoy, mapaAlumnos, soloMias, user])
 
   const sugerencias = filtrarAlumnos(alumnos, texto)
 
@@ -54,18 +88,11 @@ export default function Cafeteria() {
       if (resultado?.duplicado) {
         setAviso(`Ya está registrado ${tipo === 'desayuno' ? 'el desayuno' : 'la comida'} de ${seleccionado.nombre} para hoy. No se creó otro registro.`)
       } else {
-        const captura = {
-          id: `${seleccionado.id}-${tipo}-${Date.now()}`,
-          alumnoId: seleccionado.id,
-          nombre: seleccionado.nombre,
-          grupo: seleccionado.grupo,
-          matricula: seleccionado.matricula,
-          descripcion: descripcionAlumno(seleccionado, { matricula: false }),
-          tutor: seleccionado.tutor || '',
-          tipo,
-          hora: new Date(),
-        }
-        setCapturasHoy((actuales) => [captura, ...actuales])
+        registrarLog({
+          user, accion: `cafeteria.registrar_${tipo}`, modulo: 'cafeteria', entidad: 'consumos',
+          alumno: seleccionado, detalle: { tipo },
+        })
+        await cargarCapturasHoy()
         setAviso(`Registrado: ${tipo === 'desayuno' ? 'Desayuno' : 'Comida'} ✓`)
         const semana = await consumosSemanaAlumno(seleccionado.id)
         setResumen(semana)
@@ -79,13 +106,11 @@ export default function Cafeteria() {
   }
 
   function limpiarPanel() {
-    // Los registros ya fueron guardados al momento de capturarlos.
-    // Esta acción únicamente limpia la vista para iniciar otra captura.
-    setCapturasHoy([])
+    // Los registros ya están guardados; esto solo prepara el panel para otra captura.
     setSeleccionado(null)
     setResumen([])
     setTexto('')
-    setAviso('Panel limpiado. Las capturas realizadas ya quedaron guardadas.')
+    setAviso('')
   }
 
   return (
@@ -97,9 +122,9 @@ export default function Cafeteria() {
             Busca al alumno y registra su consumo de desayuno o comida. Cada servicio se registra una sola vez por día.
           </p>
         </div>
-        {capturasHoy.length > 0 && (
+        {seleccionado && (
           <button type="button" className="btn btn-outline" onClick={limpiarPanel}>
-            ✓ Finalizar y limpiar panel
+            ✓ Listo, siguiente alumno
           </button>
         )}
       </div>
@@ -280,18 +305,20 @@ export default function Cafeteria() {
               <h3 style={{ margin: 0 }}>Capturas de hoy</h3>
               <span>{capturasHoy.length} {capturasHoy.length === 1 ? 'registro' : 'registros'}</span>
             </div>
-            {capturasHoy.length > 0 && (
-              <button type="button" className="btn btn-outline cafeteria-clear-btn" onClick={limpiarPanel}>
-                Limpiar
-              </button>
-            )}
+            <button type="button" className="btn btn-outline cafeteria-clear-btn" onClick={cargarCapturasHoy}>
+              Actualizar
+            </button>
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.78rem', padding: '.55rem 0 .2rem' }}>
+            <input type="checkbox" checked={soloMias} onChange={(e) => setSoloMias(e.target.checked)} />
+            Solo mis capturas
+          </label>
 
           {capturasHoy.length === 0 ? (
             <div className="cafeteria-empty-list">
               <span>📋</span>
-              <p>Aquí aparecerán los alumnos conforme captures sus servicios.</p>
-              <small>Esta lista solo sirve para verificar la captura. El registro ya se guarda al presionar el botón.</small>
+              <p>Todavía no hay capturas hoy.</p>
+              <small>Se guarda al presionar el botón y esta lista se conserva aunque cambies de módulo.</small>
             </div>
           ) : (
             <div className="cafeteria-daily-list">
