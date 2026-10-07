@@ -12,7 +12,17 @@ import {
   doc,
 } from 'firebase/firestore'
 import { useAuth } from '../../contexts/AuthContext'
-import { listarAlumnosActivos } from '../../lib/alumnos'
+import {
+  listarAlumnosActivos,
+  filtrarPorPlantel,
+  descripcionAlumno,
+  gradoGrupo,
+  normalizar,
+  plantelesDe,
+  puedeVerTodosLosPlanteles,
+  sinPlantelAsignado,
+} from '../../lib/alumnos'
+import { METODOS_PAGO_ESTANCIA } from '../../lib/estancia'
 import { obtenerConfigComedor } from '../../lib/pricingComedor'
 import { marcarDetalleCobro } from '../../lib/cobros'
 import { listarPlanesComedor } from '../../lib/planesComedor'
@@ -119,6 +129,8 @@ export default function Caja() {
   const [catalogoPlanes, setCatalogoPlanes] = useState([])
   const [planes, setPlanes] = useState([])
   const [texto, setTexto] = useState('')
+  const [filtroPlantel, setFiltroPlantel] = useState('')
+  const [filtroNivel, setFiltroNivel] = useState('')
   const [expandirRegistro, setExpandirRegistro] = useState(false)
   const [seleccionadoId, setSeleccionadoId] = useState(null)
   const [modulo, setModulo] = useState(null)
@@ -150,7 +162,7 @@ export default function Caja() {
         listarPlanesComedor(),
         obtenerCalendario(),
       ])
-      setAlumnos(a)
+      setAlumnos(filtrarPorPlantel(a, user))
       setConsumos(c)
       setEstancias(e.filter((x) => x.horaSalida))
       setConfigComedor(cfg)
@@ -180,9 +192,14 @@ export default function Caja() {
   }, [alumnos, consumos, estancias])
 
   const alumnosEnRegistro = actividad.filter((a) => a.cafeteria.length || a.estancia.length)
+  const verTodosPlanteles = puedeVerTodosLosPlanteles(user)
+  const planteles = useMemo(() => plantelesDe(alumnos), [alumnos])
+  const niveles = useMemo(() => Array.from(new Set(alumnos.map((a) => String(a.nivel || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es')), [alumnos])
   const filtrados = alumnosEnRegistro.filter((a) => {
-    const t = texto.trim().toLowerCase()
-    return !t || a.nombre?.toLowerCase().includes(t) || a.matricula?.toLowerCase().includes(t) || a.grupo?.toLowerCase().includes(t)
+    const t = normalizar(texto)
+    if (filtroPlantel && normalizar(a.plantel) !== normalizar(filtroPlantel)) return false
+    if (filtroNivel && normalizar(a.nivel) !== normalizar(filtroNivel)) return false
+    return !t || normalizar(a.nombre).includes(t) || normalizar(a.matricula).includes(t) || normalizar(a.grupo).includes(t) || normalizar(a.tutor).includes(t)
   }).sort((a, b) => a.nombre.localeCompare(b.nombre))
 
   async function seleccionar(a) {
@@ -345,6 +362,7 @@ export default function Caja() {
       </div>
 
       {error && <div className="card" style={{ padding: '0.8rem 1rem', marginBottom: '1rem', border: '1px solid #ef4444', color: '#b91c1c' }}>⚠️ {error}</div>}
+      {sinPlantelAsignado(user) && <div className="card form-error">Tu cuenta aún no tiene un plantel asignado, por eso no ves alumnos. Pide al administrador que te lo asigne.</div>}
 
       {tienePermiso(user, 'caja.carga_masiva') && <div style={{ marginBottom: '1rem' }}>
         <button className="btn btn-outline" onClick={() => setMostrarCargaMasiva(v => !v)}>📦 {mostrarCargaMasiva ? 'Ocultar carga masiva' : 'Carga masiva'}</button>
@@ -384,7 +402,7 @@ export default function Caja() {
           <div className="caja-summary-list">
             {actividad.filter(a => panelResumen === 'comedor' ? a.cafeteria.length : a.estancia.length).sort((a, b) => a.nombre.localeCompare(b.nombre)).map(a => (
               <button key={a.id} className="caja-summary-row" onClick={() => seleccionar(a)}>
-                <span><strong>{a.nombre}</strong><small>{a.grado} {a.grupo} · {a.matricula}</small></span>
+                <span><strong>{a.nombre}</strong><small>{descripcionAlumno(a)}</small></span>
                 <span>{panelResumen === 'comedor' ? `🍽️ ${a.cafeteria.length}` : `🏫 ${a.estancia.length}`}</span>
               </button>
             ))}
@@ -402,11 +420,13 @@ export default function Caja() {
           {expandirRegistro && (
             <div className="card caja-register-list">
               <div className="caja-list-toolbar">
-                <input className="input" placeholder="Buscar alumno, matrícula o grupo…" value={texto} onChange={e => setTexto(e.target.value)} />
+                <input className="input" placeholder="Buscar alumno, matrícula, grupo o tutor…" value={texto} onChange={e => setTexto(e.target.value)} />
+                {verTodosPlanteles && planteles.length > 1 && <select className="input" value={filtroPlantel} onChange={e => setFiltroPlantel(e.target.value)}><option value="">Todos los planteles</option>{planteles.map(p => <option key={p} value={p}>{p}</option>)}</select>}
+                {niveles.length > 1 && <select className="input" value={filtroNivel} onChange={e => setFiltroNivel(e.target.value)}><option value="">Todos los niveles</option>{niveles.map(n => <option key={n} value={n}>{n}</option>)}</select>}
               </div>
               <div className="caja-table-wrap">
                 <table className="caja-table">
-                  <thead><tr><th>Alumno</th><th>Grupo</th><th>Comedor</th><th>Estancia</th><th>Total</th></tr></thead>
+                  <thead><tr><th>Alumno</th>{verTodosPlanteles && <th>Plantel</th>}<th>Nivel · Grado · Grupo</th><th>Comedor</th><th>Estancia</th><th>Total</th></tr></thead>
                   <tbody>
                     {filtrados.map(a => {
                       const selected = a.id === seleccionadoId
@@ -414,7 +434,7 @@ export default function Caja() {
                       const te = a.estancia.reduce((sum, e) => sum + (Number(e.costo) || 0), 0)
                       return <tr key={a.id} onClick={() => seleccionar(a)} className={selected ? 'selected' : ''}>
                         <td><strong>{selected ? '▶ ' : ''}{a.nombre}</strong><small>{a.matricula}</small></td>
-                        <td>{a.grado} {a.grupo}</td><td>🍽️ {a.cafeteria.length}</td><td>🏫 {a.estancia.length}</td><td><strong>{dinero(tc + te)}</strong></td>
+                        {verTodosPlanteles && <td>{a.plantel}</td>}<td>{gradoGrupo(a)}</td><td>🍽️ {a.cafeteria.length}</td><td>🏫 {a.estancia.length}</td><td><strong>{dinero(tc + te)}</strong></td>
                       </tr>
                     })}
                   </tbody>
@@ -430,7 +450,7 @@ export default function Caja() {
         <div className="caja-detail-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) { setSeleccionadoId(null); setPlanes([]); setConsumosMesPlan([]); setModulo(null) } }}>
           <aside className="card caja-detail-drawer" role="dialog" aria-modal="true">
           <div className="drawer-header">
-            <div><h2 style={{ margin: 0 }}>{seleccionado.nombre}</h2><span>{seleccionado.grado} {seleccionado.grupo} · {seleccionado.matricula}</span></div>
+            <div><h2 style={{ margin: 0 }}>{seleccionado.nombre}</h2><span>{descripcionAlumno(seleccionado)}</span>{(seleccionado.tutor || seleccionado.telefonoTutor) && <div style={{ fontSize: '0.78rem', color: 'var(--ink-muted)', marginTop: 2 }}>Tutor: {seleccionado.tutor || '—'}{seleccionado.telefonoTutor ? ` · Tel. ${seleccionado.telefonoTutor}` : ''}</div>}</div>
             <button className="btn btn-outline btn-small" onClick={() => { setSeleccionadoId(null); setPlanes([]); setConsumosMesPlan([]); setModulo(null) }}>Cerrar</button>
           </div>
 
@@ -530,4 +550,4 @@ function DetalleComedor({ rows, config, cambiarEstado, guardando, planesDesayuno
   </div>
 }
 
-function DetalleEstancia({ rows, cambiarEstado, guardando }) { return <div style={{ marginTop: '1rem' }}><h3 style={{ fontSize: '0.95rem' }}>Detalle de estancia</h3>{rows.length === 0 ? <p style={{ color: 'var(--ink-muted)' }}>Sin estancias cerradas.</p> : rows.map(e => <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.8rem', alignItems: 'center', padding: '0.65rem 0', borderTop: '1px solid var(--border)' }}><div><strong>{e.horaEntrada ? formatoFecha(e.horaEntrada) : '—'}</strong><div style={{ fontSize: '0.76rem', color: 'var(--ink-muted)' }}>{e.horaEntrada ? formatoHora(e.horaEntrada) : '—'} → {e.horaSalida ? formatoHora(e.horaSalida) : '—'} · {e.minutos || 0} min · {dinero(e.costo)}</div></div><Check label="Cargado" checked={e.cargado} disabled={guardando === `estancias-${e.id}-cargado`} onChange={v => cambiarEstado('estancias', e.id, 'cargado', v)} /><Check label="Pagado" checked={e.pagado} disabled={!e.cargado || guardando === `estancias-${e.id}-pagado`} onChange={v => cambiarEstado('estancias', e.id, 'pagado', v)} /></div>)}</div> }
+function DetalleEstancia({ rows, cambiarEstado, guardando }) { return <div style={{ marginTop: '1rem' }}><h3 style={{ fontSize: '0.95rem' }}>Detalle de estancia</h3>{rows.length === 0 ? <p style={{ color: 'var(--ink-muted)' }}>Sin estancias cerradas.</p> : rows.map(e => <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.8rem', alignItems: 'center', padding: '0.65rem 0', borderTop: '1px solid var(--border)' }}><div><strong>{e.horaEntrada ? formatoFecha(e.horaEntrada) : '—'}</strong><div style={{ fontSize: '0.76rem', color: 'var(--ink-muted)' }}>{e.horaEntrada ? formatoHora(e.horaEntrada) : '—'} → {e.horaSalida ? formatoHora(e.horaSalida) : '—'} · {e.minutos || 0} min · {dinero(e.costo)}</div></div><Check label="Cargado" checked={e.cargado} disabled={guardando === `estancias-${e.id}-cargado`} onChange={v => cambiarEstado('estancias', e.id, 'cargado', v)} /><Check label="Pagado" checked={e.pagado} disabled={!e.cargado || guardando === `estancias-${e.id}-pagado`} onChange={v => cambiarEstado('estancias', e.id, 'pagado', v)} />{e.metodoPago && METODOS_PAGO_ESTANCIA[e.metodoPago] && <div style={{ gridColumn: '1 / -1', fontSize: '0.76rem', fontWeight: 700 }}>{METODOS_PAGO_ESTANCIA[e.metodoPago].icono} Pagado en {METODOS_PAGO_ESTANCIA[e.metodoPago].etiqueta} desde Estancia{e.corteId ? ' · ya incluido en un corte' : ' · pendiente de corte'}</div>}</div>)}</div> }
