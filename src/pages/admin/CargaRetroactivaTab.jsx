@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { listarAlumnosActivos, filtrarAlumnos } from '../../lib/alumnos'
+import { listarAlumnosActivos, filtrarAlumnos, filtrarPorPlantel, descripcionAlumno } from '../../lib/alumnos'
 import {
   registrarConsumosRetroactivos,
   registrarEstanciaRetroactiva,
@@ -49,7 +49,7 @@ export default function CargaRetroactivaTab() {
   const [retiradoPor, setRetiradoPor] = useState('Captura administrativa retroactiva')
 
   useEffect(() => {
-    listarAlumnosActivos().then(setAlumnos)
+    listarAlumnosActivos().then((lista) => setAlumnos(filtrarPorPlantel(lista, user)))
   }, [])
 
   const sugerencias = useMemo(() => filtrarAlumnos(alumnos, texto), [alumnos, texto])
@@ -182,7 +182,7 @@ export default function CargaRetroactivaTab() {
                 return (
                   <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.4rem', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
                     <input type="checkbox" checked={checked} onChange={() => alternarAlumno(a)} />
-                    <span><strong>{a.nombre}</strong><br /><small>{a.grado} {a.grupo} · {a.matricula}</small></span>
+                    <span><strong>{a.nombre}</strong><br /><small>{descripcionAlumno(a)}</small></span>
                   </label>
                 )
               })}
@@ -216,7 +216,7 @@ export default function CargaRetroactivaTab() {
               {sugerenciasEstancia.map((a) => (
                 <button key={a.id} onClick={() => { setAlumnoEstancia(a); setTextoEstancia(a.nombre) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.55rem 0.4rem', border: 'none', background: 'transparent', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
                   <strong>{a.nombre}</strong>
-                  <br /><small>{a.grado} {a.grupo} · {a.matricula}</small>
+                  <br /><small>{descripcionAlumno(a)}</small>
                 </button>
               ))}
             </div>
@@ -225,7 +225,7 @@ export default function CargaRetroactivaTab() {
           {alumnoEstancia && (
             <div style={{ marginTop: '0.8rem', padding: '0.8rem', background: 'var(--surface-sunken)', borderRadius: 6 }}>
               <strong>{alumnoEstancia.nombre}</strong>
-              <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>{alumnoEstancia.grado} {alumnoEstancia.grupo} · {alumnoEstancia.matricula}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>{descripcionAlumno(alumnoEstancia)}</div>
             </div>
           )}
 
