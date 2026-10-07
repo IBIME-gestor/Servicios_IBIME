@@ -17,6 +17,7 @@ import { db } from '../firebase'
 import { rangoSemanaActual } from './fechas'
 import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, horaInicioPorNivel, obtenerConfigEstancia } from './pricing'
 import { subirArchivoADrive } from './googleDrive'
+import { registrarLog } from './log'
 
 /** Métodos de pago que se cobran directo en Estancia (fuera de Caja) y entran al corte. */
 export const METODOS_PAGO_ESTANCIA = {
@@ -231,6 +232,12 @@ export async function crearCorteEstancia({ estancias, usuarioEmail, usuarioNombr
       costo: monto(e),
       fechaPagado: e.fechaPagado ? new Date(e.fechaPagado).toISOString() : null,
     })),
+  })
+
+  registrarLog({
+    user: { email: usuarioEmail, nombre: usuarioNombre },
+    accion: 'estancia.corte', modulo: 'estancia', entidad: 'cortes_estancia', entidadId: corteRef.id,
+    detalle: { plantel: plantel || '', cantidad: estancias.length, total: suma(estancias), efectivo: suma(efectivo), cometa: suma(cometa) },
   })
 
   // Firestore permite 500 escrituras por lote.
