@@ -8,6 +8,7 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import { PERMISO_ADMIN, PERMISOS_COLABORADOR } from '../lib/permisos'
+import { registrarLog } from '../lib/log'
 
 // Dominio de Google Workspace del colegio, ej. "colegioibime.edu.mx".
 // Cualquier cuenta fuera de este dominio se rechaza aunque tenga sesión
@@ -102,7 +103,10 @@ export function AuthProvider({ children }) {
     // Restringe la propia pantalla de selección de cuenta de Google al dominio,
     // así la mayoría de la gente ni siquiera ve su cuenta personal como opción.
     if (DOMINIO_PERMITIDO) provider.setCustomParameters({ hd: DOMINIO_PERMITIDO })
-    return signInWithPopup(auth, provider)
+    return signInWithPopup(auth, provider).then((res) => {
+      registrarLog({ user: { email: res.user.email, uid: res.user.uid, nombre: res.user.displayName }, accion: 'sesion.inicio', modulo: 'sesion' })
+      return res
+    })
   }
 
   const logout = () => signOut(auth)
