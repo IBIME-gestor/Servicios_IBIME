@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
+import { useAuth } from '../../contexts/AuthContext'
+import { registrarLog } from '../../lib/log'
 import { leerExcel, importarAlumnos, detectarMapeo, CAMPOS_ALUMNO } from '../../lib/excelImport'
 
 export default function ImportarAlumnosTab() {
+  const { user } = useAuth()
   const [headers, setHeaders] = useState([])
   const [rows, setRows] = useState([])
   const [mapeo, setMapeo] = useState({})
@@ -33,6 +36,7 @@ export default function ImportarAlumnosTab() {
     setError('')
     try {
       const total = await importarAlumnos(rows, mapeo)
+      registrarLog({ user, accion: 'admin.importar_alumnos', modulo: 'admin', entidad: 'alumnos', detalle: { total } })
       setResultado(`Se importaron ${total} alumnos correctamente.`)
     } catch (err) {
       console.error(err)
