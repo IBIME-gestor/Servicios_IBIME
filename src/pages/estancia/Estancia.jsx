@@ -1,12 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
-import { listarAlumnosActivos, filtrarAlumnos } from '../../lib/alumnos'
-import { iniciarEstancia, estanciasActivas, estanciasDelDia, finalizarEstancia, marcarEstanciaPagada } from '../../lib/estancia'
+import {
+  listarAlumnosActivos,
+  filtrarAlumnos,
+  filtrarPorPlantel,
+  descripcionAlumno,
+  puedeVerTodosLosPlanteles,
+  sinPlantelAsignado,
+} from '../../lib/alumnos'
+import {
+  iniciarEstancia,
+  estanciasActivas,
+  estanciasDelDia,
+  finalizarEstancia,
+  marcarEstanciaPagada,
+  METODOS_PAGO_ESTANCIA,
+} from '../../lib/estancia'
 import { tienePermiso } from '../../lib/permisos'
 import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
 import { calcularCostoEstancia, calcularMinutosEstancia, obtenerConfigEstancia } from '../../lib/pricing'
 import FirmaPad from '../../components/FirmaPad'
+import CorteEstancia from './CorteEstancia'
 
 const dineroLocal = (n) => `$${Number(n || 0).toFixed(2)}`
 
@@ -20,7 +35,10 @@ const minutosTexto = (minutos) => {
 
 export default function Estancia() {
   const { user } = useAuth()
-  const [alumnos, setAlumnos] = useState([])
+  const [alumnosTodos, setAlumnosTodos] = useState([])
+  const [vista, setVista] = useState('operacion') // 'operacion' | 'corte'
+  const [pagando, setPagando] = useState(null) // estancia a la que se le elige método de pago
+  const [guardandoPago, setGuardandoPago] = useState('')
   const [texto, setTexto] = useState('')
   const [activos, setActivos] = useState([])
   const [registrosHoy, setRegistrosHoy] = useState([])
@@ -43,12 +61,22 @@ export default function Estancia() {
   }
 
   useEffect(() => {
-    listarAlumnosActivos().then(setAlumnos)
+    listarAlumnosActivos().then(setAlumnosTodos)
     obtenerConfigEstancia().then(setConfigEstancia).catch(() => setConfigEstancia(null))
     const reloj = setInterval(() => setAhora(new Date()), 30000)
     cargarRegistros().catch((err) => setError(err?.message || 'No fue posible cargar las estancias.'))
     return () => clearInterval(reloj)
   }, [])
+
+  // Cada usuario solo ve y opera alumnos (y sus registros) de su plantel.
+  const verTodos = puedeVerTodosLosPlanteles(user)
+  const alumnos = useMemo(() => filtrarPorPlantel(alumnosTodos, user), [alumnosTodos, user])
+  const mapaAlumnos = useMemo(() => new Map(alumnos.map((a) => [a.id, a])), [alumnos])
+  const delPlantel = (lista) => (verTodos ? lista : lista.filter((e) => mapaAlumnos.has(e.alumnoId)))
+  const activosVisibles = delPlantel(activos)
+  const registrosVisibles = delPlantel(registrosHoy)
+  const infoAlumno = (e) => descripcionAlumno(mapaAlumnos.get(e.alumnoId), { matricula: false }) || e.alumnoGrupo || ''
+  const puedeCorte = tienePermiso(user, 'estancia.corte')
 
   const sugerencias = filtrarAlumnos(alumnos, texto)
 
@@ -96,13 +124,15 @@ export default function Estancia() {
     }
   }
 
-  async function pagarEstancia(estanciaId) {
+  async function pagarEstancia(estanciaId, metodoPago) {
     setGuardandoPago(estanciaId)
     setError('')
     try {
-      await marcarEstanciaPagada({ estanciaId, usuario: user?.email || user?.uid || 'usuario' })
-      setRegistrosHoy((lista) => lista.map((e) => e.id === estanciaId ? { ...e, pagado: true } : e))
-      setResultado((actual) => actual?.estanciaId === estanciaId ? { ...actual, pagado: true } : actual)
+      await marcarEstanciaPagada({ estanciaId, usuario: user?.email || user?.uid || 'usuario', metodoPago })
+      const marca = { pagado: true, cargado: true, metodoPago }
+      setRegistrosHoy((lista) => lista.map((e) => (e.id === estanciaId ? { ...e, ...marca } : e)))
+      setResultado((actual) => (actual?.estanciaId === estanciaId ? { ...actual, ...marca } : actual))
+      setPagando(null)
     } catch (err) {
       console.error(err)
       setError(err?.message || 'No fue posible registrar el pago.')
@@ -111,9 +141,7 @@ export default function Estancia() {
     }
   }
 
-  const [guardandoPago, setGuardandoPago] = useState('')
-
-  const cerradasHoy = registrosHoy.filter((e) => e.horaSalida)
+  const cerradasHoy = registrosVisibles.filter((e) => e.horaSalida)
 
   return (
     <div className="estancia-page">
@@ -123,12 +151,33 @@ export default function Estancia() {
           <p className="page-muted">Registra la entrada y salida. El sistema calcula automáticamente el tiempo y el costo de cada estancia.</p>
         </div>
         <div className="estancia-counts">
-          <span><strong>{activos.length}</strong> dentro</span>
+          <span><strong>{activosVisibles.length}</strong> dentro</span>
           <span><strong>{cerradasHoy.length}</strong> salidas hoy</span>
         </div>
       </div>
 
       {error && <div className="card form-error">⚠️ {error}</div>}
+
+      {sinPlantelAsignado(user) && (
+        <div className="card form-error">
+          Tu cuenta aún no tiene un plantel asignado, por eso no ves alumnos. Pide al administrador que te lo asigne.
+        </div>
+      )}
+
+      {puedeCorte && (
+        <div className="admin-tabs">
+          <button className={`admin-tab${vista === 'operacion' ? ' active' : ''}`} onClick={() => setVista('operacion')}>
+            Entradas y salidas
+          </button>
+          <button className={`admin-tab${vista === 'corte' ? ' active' : ''}`} onClick={() => setVista('corte')}>
+            Corte de estancia
+          </button>
+        </div>
+      )}
+
+      {vista === 'corte' && puedeCorte && <CorteEstancia alumnos={alumnos} />}
+
+      {vista === 'operacion' && (<>
 
       {tienePermiso(user, 'estancia.carga_masiva') && (
         <div style={{ marginBottom: '1rem' }}>
@@ -162,7 +211,7 @@ export default function Estancia() {
                       className="estancia-sugerencia"
                     >
                       <strong>{a.nombre}</strong>
-                      <div>{a.grado} {a.grupo} · {a.matricula}</div>
+                      <div>{descripcionAlumno(a)}</div>
                     </button>
                   ))}
                 </div>
@@ -172,17 +221,18 @@ export default function Estancia() {
 
           <div className="card estancia-active-card">
             <div className="section-heading">
-              <div><h3 style={{ margin: 0 }}>Alumnos en estancia ahora</h3><span>{activos.length} dentro</span></div>
+              <div><h3 style={{ margin: 0 }}>Alumnos en estancia ahora</h3><span>{activosVisibles.length} dentro</span></div>
             </div>
-            {activos.length === 0 ? (
+            {activosVisibles.length === 0 ? (
               <p className="page-muted">No hay alumnos en estancia.</p>
             ) : (
               <div className="estancia-active-list">
-                {activos.map((e) => (
+                {activosVisibles.map((e) => (
                   <div key={e.id} className="estancia-active-item">
                     <div className="estancia-status-dot" />
                     <div className="estancia-item-main">
                       <strong>{e.alumnoNombre}</strong>
+                      {infoAlumno(e) && <span>{infoAlumno(e)}</span>}
                       <span>Entrada: {formatoHora(e.horaEntrada)}</span>
                       {configEstancia && (() => {
                         const minutosActuales = calcularMinutosEstancia(e.horaEntrada, ahora, configEstancia)
@@ -202,19 +252,20 @@ export default function Estancia() {
 
         <aside className="card estancia-daily-card">
           <div className="section-heading">
-            <div><h3 style={{ margin: 0 }}>Registro de hoy</h3><span>{registrosHoy.length} movimientos</span></div>
+            <div><h3 style={{ margin: 0 }}>Registro de hoy</h3><span>{registrosVisibles.length} movimientos</span></div>
             <button className="btn btn-outline btn-small" onClick={() => cargarRegistros()}>Actualizar</button>
           </div>
 
-          {registrosHoy.length === 0 ? (
+          {registrosVisibles.length === 0 ? (
             <div className="daily-empty"><span>🏫</span><p>Aquí aparecerán las entradas y salidas del día.</p></div>
           ) : (
             <div className="estancia-daily-list">
-              {registrosHoy.map((e) => (
+              {registrosVisibles.map((e) => (
                 <div key={e.id} className="estancia-daily-item">
                   <div className={`estancia-daily-badge ${e.horaSalida ? 'closed' : 'open'}`}>{e.horaSalida ? '✓' : '→'}</div>
                   <div className="estancia-daily-info">
                     <strong>{e.alumnoNombre}</strong>
+                    {infoAlumno(e) && <span>{infoAlumno(e)}</span>}
                     <span>Entrada {e.horaEntrada ? formatoHora(e.horaEntrada) : '—'}</span>
                     {e.horaSalida ? (
                       <span>Salida {formatoHora(e.horaSalida)} · <strong>{minutosTexto(e.minutos)}</strong></span>
@@ -226,9 +277,13 @@ export default function Estancia() {
                     {e.horaSalida ? (
                       <>
                         <strong>${Number(e.costo || 0).toFixed(2)}</strong>
-                        {e.pagado ? <span className="status-pill status-paid">✓ Pagado</span> : (
-                          <button className="btn btn-primary btn-small" disabled={guardandoPago === e.id} onClick={() => pagarEstancia(e.id)}>
-                            {guardandoPago === e.id ? '…' : 'Pagado'}
+                        {e.pagado ? (
+                          <span className="status-pill status-paid">
+                            ✓ Pagado{e.metodoPago && METODOS_PAGO_ESTANCIA[e.metodoPago] ? ` · ${METODOS_PAGO_ESTANCIA[e.metodoPago].etiqueta}` : ''}
+                          </span>
+                        ) : (
+                          <button className="btn btn-primary btn-small" disabled={guardandoPago === e.id} onClick={() => setPagando(e)}>
+                            {guardandoPago === e.id ? '…' : 'Pagar'}
                           </button>
                         )}
                       </>
@@ -240,6 +295,8 @@ export default function Estancia() {
           )}
         </aside>
       </div>
+
+      </>)}
 
       {retirando && (
         <div className="estancia-drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !cargando) setRetirando(null) }}>
@@ -257,10 +314,12 @@ export default function Estancia() {
                 <p className="page-muted">{resultado.desglose}</p>
                 <div className="drawer-actions" style={{ justifyContent: 'center' }}>
                   {resultado.pagado ? (
-                    <span className="status-pill status-paid">✓ Pago registrado y enviado a Caja</span>
+                    <span className="status-pill status-paid">
+                      ✓ Pago registrado{resultado.metodoPago ? ` en ${METODOS_PAGO_ESTANCIA[resultado.metodoPago]?.etiqueta}` : ''} y enviado a Caja
+                    </span>
                   ) : (
-                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => pagarEstancia(resultado.estanciaId)}>
-                      {guardandoPago === resultado.estanciaId ? 'Registrando…' : '💳 Marcar como pagado'}
+                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => setPagando({ id: resultado.estanciaId, alumnoNombre: retirando.alumnoNombre, costo: resultado.costo })}>
+                      💳 Pagar
                     </button>
                   )}
                   <button className="btn btn-outline" onClick={() => setRetirando(null)}>Listo</button>
@@ -283,6 +342,34 @@ export default function Estancia() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {pagando && (
+        <div className="estancia-drawer-backdrop pago-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !guardandoPago) setPagando(null) }}>
+          <div className="card pago-modal" role="dialog" aria-modal="true">
+            <h3 style={{ marginTop: 0 }}>¿Cómo pagó?</h3>
+            <p className="page-muted" style={{ marginTop: '-0.4rem' }}>
+              {pagando.alumnoNombre} · <strong>{dineroLocal(pagando.costo)}</strong>
+            </p>
+            <div className="pago-opciones">
+              {Object.values(METODOS_PAGO_ESTANCIA).map((m) => (
+                <button
+                  key={m.clave}
+                  type="button"
+                  className="btn btn-primary pago-opcion"
+                  disabled={Boolean(guardandoPago)}
+                  onClick={() => pagarEstancia(pagando.id, m.clave)}
+                >
+                  <span style={{ fontSize: '1.6rem' }}>{m.icono}</span>
+                  {m.etiqueta}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
+              Se refleja como pagado en Caja y queda pendiente en el corte de estancia.
+            </p>
+            <button className="btn btn-outline" disabled={Boolean(guardandoPago)} onClick={() => setPagando(null)}>Cancelar</button>
           </div>
         </div>
       )}
