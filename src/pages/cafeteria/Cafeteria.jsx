@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
-import { listarAlumnosActivos, filtrarAlumnos } from '../../lib/alumnos'
+import {
+  listarAlumnosActivos,
+  filtrarAlumnos,
+  filtrarPorPlantel,
+  descripcionAlumno,
+  sinPlantelAsignado,
+} from '../../lib/alumnos'
 import { registrarConsumo, consumosSemanaAlumno } from '../../lib/consumos'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
 import CargaMasivaServicios from '../../components/CargaMasivaServicios'
@@ -8,7 +14,7 @@ import { tienePermiso } from '../../lib/permisos'
 
 export default function Cafeteria() {
   const { user } = useAuth()
-  const [alumnos, setAlumnos] = useState([])
+  const [alumnosTodos, setAlumnosTodos] = useState([])
   const [texto, setTexto] = useState('')
   const [seleccionado, setSeleccionado] = useState(null)
   const [resumen, setResumen] = useState([])
@@ -18,8 +24,11 @@ export default function Cafeteria() {
   const [capturasHoy, setCapturasHoy] = useState([])
 
   useEffect(() => {
-    listarAlumnosActivos().then(setAlumnos)
+    listarAlumnosActivos().then(setAlumnosTodos)
   }, [])
+
+  // Cada usuario solo ve y captura alumnos de su plantel.
+  const alumnos = useMemo(() => filtrarPorPlantel(alumnosTodos, user), [alumnosTodos, user])
 
   const sugerencias = filtrarAlumnos(alumnos, texto)
 
@@ -51,6 +60,8 @@ export default function Cafeteria() {
           nombre: seleccionado.nombre,
           grupo: seleccionado.grupo,
           matricula: seleccionado.matricula,
+          descripcion: descripcionAlumno(seleccionado, { matricula: false }),
+          tutor: seleccionado.tutor || '',
           tipo,
           hora: new Date(),
         }
@@ -92,6 +103,12 @@ export default function Cafeteria() {
           </button>
         )}
       </div>
+
+      {sinPlantelAsignado(user) && (
+        <div className="card form-error">
+          Tu cuenta aún no tiene un plantel asignado, por eso no ves alumnos. Pide al administrador que te lo asigne.
+        </div>
+      )}
 
       {tienePermiso(user, 'cafeteria.carga_masiva') && (
         <div style={{ marginBottom: '1rem' }}>
@@ -152,7 +169,7 @@ export default function Cafeteria() {
                   >
                     <strong>{a.nombre}</strong>
                     <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-                      {a.grado} {a.grupo} · {a.matricula}
+                      {descripcionAlumno(a)}
                     </div>
                   </button>
                 ))}
@@ -174,7 +191,7 @@ export default function Cafeteria() {
                 <div>
                   <strong>{seleccionado.nombre}</strong>
                   <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-                    {seleccionado.grado} {seleccionado.grupo} · {seleccionado.matricula}
+                    {descripcionAlumno(seleccionado)}
                   </div>
                 </div>
                 <button
@@ -200,8 +217,13 @@ export default function Cafeteria() {
             <div style={{ marginBottom: '1rem' }}>
               <strong>{seleccionado.nombre}</strong>
               <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-                {seleccionado.grado} {seleccionado.grupo} · {seleccionado.matricula}
+                {descripcionAlumno(seleccionado)}
               </div>
+              {seleccionado.tutor && (
+                <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                  Tutor: {seleccionado.tutor}{seleccionado.telefonoTutor ? ` · Tel. ${seleccionado.telefonoTutor}` : ''}
+                </div>
+              )}
             </div>
 
             <div className="cafeteria-actions">
@@ -278,7 +300,7 @@ export default function Cafeteria() {
                   <div className="cafeteria-daily-check">✓</div>
                   <div className="cafeteria-daily-info">
                     <strong>{captura.nombre}</strong>
-                    <span>{captura.grupo || 'Sin grupo'} · {captura.matricula || 'Sin matrícula'}</span>
+                    <span>{captura.descripcion || captura.grupo || 'Sin grupo'} · {captura.matricula || 'Sin matrícula'}</span>
                   </div>
                   <div className="cafeteria-daily-service">
                     <strong>{captura.tipo === 'desayuno' ? 'Desayuno' : 'Comida'}</strong>
