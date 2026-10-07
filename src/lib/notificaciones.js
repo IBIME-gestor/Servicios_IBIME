@@ -37,7 +37,7 @@ function reemplazarPlantilla(template, alumno, detalles, totals) {
   const consumosHtml = detalles.consumos.map(c => `<tr><td>${c.fecha}</td><td>${c.tipo}</td><td>$${c.costo.toFixed(2)}</td></tr>`).join('')
   const estanciasHtml = detalles.estancias.map(e => `<tr><td>${e.fecha}</td><td>${e.entrada} - ${e.salida}</td><td>${e.minutos} min</td><td>$${e.costo.toFixed(2)}</td></tr>`).join('')
   const valores = {
-    NOMBRE_ALUMNO: alumno.nombre || '', MATRICULA: alumno.matricula || '', GRADO: alumno.grado || '', GRUPO: alumno.grupo || '',
+    NOMBRE_ALUMNO: alumno.nombre || '', MATRICULA: alumno.matricula || '', GRADO: alumno.grado || '', GRUPO: alumno.grupo || '', PLANTEL: alumno.plantel || '', NIVEL: alumno.nivel || '', TUTOR: alumno.tutor || '',
     CORREO_ALUMNO: alumno.correoAlumno || '', CONSUMOS_CAFETERIA: consumosHtml, ESTANCIAS: estanciasHtml,
     TOTAL_COMEDOR: totals.comedor.toFixed(2), TOTAL_ESTANCIA: totals.estancia.toFixed(2), TOTAL_ESTIMADO: totals.total.toFixed(2),
     MENSAJE_COMETA: 'Verifique en Cometa que el saldo ya esté disponible para realizar el pago.',
