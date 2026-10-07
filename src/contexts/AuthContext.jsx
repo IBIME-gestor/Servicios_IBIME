@@ -5,9 +5,9 @@ import {
   signOut,
   onAuthStateChanged,
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore'
 import { auth, db } from '../firebase'
-import { PERMISO_ADMIN, PERMISOS_COLABORADOR } from '../lib/permisos'
+import { PERMISO_ADMIN, PERMISOS_COLABORADOR, normalizarPermisos } from '../lib/permisos'
 import { registrarLog } from '../lib/log'
 
 // Dominio de Google Workspace del colegio, ej. "colegioibime.edu.mx".
@@ -32,20 +32,24 @@ export function AuthProvider({ children }) {
   const [errorDominio, setErrorDominio] = useState('')
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+    let unsubPerfil = null
+
+    const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      if (unsubPerfil) {
+        unsubPerfil()
+        unsubPerfil = null
+      }
+
       if (!fbUser) {
         setUser(null)
         setLoading(false)
         return
       }
 
-      // Mientras se lee el perfil, las rutas privadas deben esperar (no redirigir a /login).
       setLoading(true)
 
-      // Verificación de dominio también en el cliente (además del `hd` que
-      // ya filtra en la pantalla de Google, por si alguien intenta forzarlo).
-      const dominioCuenta = fbUser.email.split('@')[1]
-      if (DOMINIO_PERMITIDO && dominioCuenta !== DOMINIO_PERMITIDO) {
+      const dominioCuenta = (fbUser.email || '').split('@')[1]?.toLowerCase()
+      if (DOMINIO_PERMITIDO && dominioCuenta !== DOMINIO_PERMITIDO.toLowerCase()) {
         await signOut(auth)
         setErrorDominio(`Solo cuentas @${DOMINIO_PERMITIDO} pueden entrar.`)
         setUser(null)
@@ -53,16 +57,14 @@ export function AuthProvider({ children }) {
         return
       }
 
+      const perfilRef = doc(db, 'usuarios', fbUser.uid)
+      const esAdminPorCorreo = CORREOS_ADMIN.includes((fbUser.email || '').toLowerCase())
+
       try {
-        const perfilRef = doc(db, 'usuarios', fbUser.uid)
         const perfilSnap = await getDoc(perfilRef)
-        const esAdminPorCorreo = CORREOS_ADMIN.includes(fbUser.email.toLowerCase())
 
         if (!perfilSnap.exists()) {
-          // Primera vez que esta persona entra: admin automático si su
-          // correo está en VITE_ADMIN_EMAILS; si no, colaborador (solo ver
-          // alumnos). El administrador puede ajustarle permisos después.
-          const permisosIniciales = esAdminPorCorreo ? [PERMISO_ADMIN] : PERMISOS_COLABORADOR
+          const permisosIniciales = esAdminPorCorreo ? [PERMISO_ADMIN] : [...PERMISOS_COLABORADOR]
           await setDoc(perfilRef, {
             nombre: fbUser.displayName || fbUser.email,
             email: fbUser.email,
@@ -70,9 +72,19 @@ export function AuthProvider({ children }) {
             activo: true,
             creado: serverTimestamp(),
           })
-          setUser({ uid: fbUser.uid, email: fbUser.email, nombre: fbUser.displayName || fbUser.email, permisos: permisosIniciales, plantel: '' })
-        } else {
-          const perfil = perfilSnap.data()
+        }
+
+        // Escucha el perfil en tiempo real. Así, si el administrador asigna
+        // caja.ver mientras la persona ya está dentro, su sesión recibe el
+        // permiso inmediatamente sin depender de cerrar sesión o borrar caché.
+        unsubPerfil = onSnapshot(perfilRef, async (snap) => {
+          if (!snap.exists()) {
+            setUser(null)
+            setLoading(false)
+            return
+          }
+
+          const perfil = snap.data()
           if (perfil.activo === false) {
             await signOut(auth)
             setErrorDominio('Tu cuenta fue desactivada por el administrador.')
@@ -80,22 +92,32 @@ export function AuthProvider({ children }) {
             setLoading(false)
             return
           }
+
+          const permisos = normalizarPermisos(perfil.permisos)
           setUser({
             uid: fbUser.uid,
             email: fbUser.email,
             nombre: perfil.nombre || fbUser.displayName || fbUser.email,
-            permisos: perfil.permisos || PERMISOS_COLABORADOR,
+            permisos,
             plantel: perfil.plantel || '',
           })
-        }
+          setLoading(false)
+        }, (err) => {
+          console.error('Error escuchando perfil de usuario:', err)
+          setUser({ uid: fbUser.uid, email: fbUser.email, nombre: fbUser.email, permisos: [], plantel: '' })
+          setLoading(false)
+        })
       } catch (err) {
         console.error('Error leyendo/creando perfil de usuario:', err)
         setUser({ uid: fbUser.uid, email: fbUser.email, nombre: fbUser.email, permisos: [], plantel: '' })
-      } finally {
         setLoading(false)
       }
     })
-    return unsub
+
+    return () => {
+      if (unsubPerfil) unsubPerfil()
+      unsubAuth()
+    }
   }, [])
 
   const loginConGoogle = () => {
