@@ -123,6 +123,12 @@ export const CATALOGO_PERMISOS = [
           'Permite capturar servicios de una fecha y hora anteriores conservando la fecha real de captura.',
       },
       {
+        clave: 'admin.log',
+        etiqueta: 'Consultar la bitácora (log) de auditoría',
+        descripcion:
+          'Ver qué usuario registró cada movimiento (consumos, estancias, cobros, cortes, configuración).',
+      },
+      {
         clave: 'admin.notificaciones',
         etiqueta: 'Gestionar notificaciones semanales',
         descripcion:
