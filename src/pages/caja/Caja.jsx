@@ -22,7 +22,7 @@ import {
   puedeVerTodosLosPlanteles,
   sinPlantelAsignado,
 } from '../../lib/alumnos'
-import { METODOS_PAGO_ESTANCIA } from '../../lib/estancia'
+import { METODOS_PAGO_ESTANCIA, listarCortesEstancia } from '../../lib/estancia'
 import { obtenerConfigComedor } from '../../lib/pricingComedor'
 import { marcarDetalleCobro } from '../../lib/cobros'
 import { listarPlanesComedor } from '../../lib/planesComedor'
@@ -129,7 +129,7 @@ function finanzasAlumno(a, planesTodos, config) {
   const individuales = a.cafeteria.filter((c) => (c.tipo === 'desayuno' ? !cubreDesayuno : !cubreComida))
   const filas = [
     ...individuales.map((c) => ({ monto: costoConsumoLocal(c, config), cargado: c.cargado, pagado: c.pagado })),
-    ...planes.map((p) => ({ monto: Number(p.monto || 0), cargado: p.cargado, pagado: p.pagado })),
+    ...planes.map((p) => ({ monto: Number(p.montoAjustado ?? p.monto ?? 0), cargado: p.cargado, pagado: p.pagado })),
     ...a.estancia.map((e) => ({ monto: Number(e.costo) || 0, cargado: e.cargado, pagado: e.pagado })),
   ]
   const suma = (f) => filas.filter(f).reduce((t, x) => t + x.monto, 0)
@@ -167,6 +167,12 @@ export default function Caja() {
   const [calendario, setCalendario] = useState({ vacaciones: [] })
   const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false)
   const [formMensualidad, setFormMensualidad] = useState({ tipo: 'desayuno', monto: '', planCatalogoId: '' })
+  const [cortesEstancia, setCortesEstancia] = useState([])
+  const [mostrarCortes, setMostrarCortes] = useState(false)
+  const [fechaCorteDesde, setFechaCorteDesde] = useState(fechaInput(mesActual.inicio))
+  const [fechaCorteHasta, setFechaCorteHasta] = useState(fechaInput(mesActual.fin))
+  const [corteExpandido, setCorteExpandido] = useState(null)
+  const [aplicandoAjuste, setAplicandoAjuste] = useState('')
 
   const inicio = useMemo(() => parseInputDate(fechaDesde, false), [fechaDesde])
   const fin = useMemo(() => parseInputDate(fechaHasta, true), [fechaHasta])
@@ -179,7 +185,7 @@ export default function Caja() {
     setCargando(true)
     setError('')
     try {
-      const [a, c, e, cfg, cfgPlanes, cfgCalendario, planesPeriodo] = await Promise.all([
+      const [a, c, e, cfg, cfgPlanes, cfgCalendario, planesPeriodo, cortes] = await Promise.all([
         listarAlumnosActivos(),
         cargarConsumosRango(inicio, fin),
         cargarEstanciasRango(inicio, fin),
@@ -187,6 +193,7 @@ export default function Caja() {
         listarPlanesComedor(),
         obtenerCalendario(),
         cargarPlanesRango(inicio, fin),
+        listarCortesEstancia(100),
       ])
       setPlanesTodos(planesPeriodo)
       setAlumnos(filtrarPorPlantel(a, user))
@@ -195,6 +202,7 @@ export default function Caja() {
       setConfigComedor(cfg)
       setCatalogoPlanes(cfgPlanes.filter((p) => p.activo !== false))
       setCalendario(cfgCalendario || { vacaciones: [] })
+      setCortesEstancia(cortes || [])
       if (seleccionadoId) {
         const p = await cargarPlanesAlumno(seleccionadoId)
         setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
@@ -224,6 +232,13 @@ export default function Caja() {
     { esperado: 0, cargado: 0, pagado: 0 }
   ), [actividad])
 
+  const cortesFiltrados = useMemo(() => {
+    const desde = parseInputDate(fechaCorteDesde, false)
+    const hasta = parseInputDate(fechaCorteHasta, true)
+    if (desde > hasta) return []
+    return cortesEstancia.filter((c) => c.creadoEn && c.creadoEn >= desde && c.creadoEn <= hasta)
+  }, [cortesEstancia, fechaCorteDesde, fechaCorteHasta])
+
   const alumnosEnRegistro = actividad.filter((a) => a.cafeteria.length || a.estancia.length || a.fin.planes)
   const verTodosPlanteles = puedeVerTodosLosPlanteles(user)
   const planteles = useMemo(() => plantelesDe(alumnos), [alumnos])
@@ -252,6 +267,25 @@ export default function Caja() {
     }
   }
 
+  function incidenciasMensualidad(plan) {
+    const inicioPlan = plan.fechaInicio?.toDate ? plan.fechaInicio.toDate() : new Date(plan.fechaInicio)
+    const finPlan = plan.fechaFin?.toDate ? plan.fechaFin.toDate() : new Date(plan.fechaFin)
+    const consumidos = new Set(consumosMesPlan.filter(c => c.tipo === plan.tipo && c.fecha && c.fecha >= inicioPlan && c.fecha <= finPlan && esDiaHabil(c.fecha, calendario.vacaciones || [])).map(c => fechaISO(c.fecha)))
+    const diasPlan = contarDiasHabiles(inicioPlan, finPlan, calendario.vacaciones || [])
+    const valorDia = diasPlan > 0 ? Number(plan.monto || 0) / diasPlan : 0
+    const hoy = inicioDelDia(new Date())
+    const hasta = finPlan < hoy ? finPlan : hoy
+    const yaAjustados = new Set(plan.incidenciasInasistencia || [])
+    const faltantes = []
+    for (let d = new Date(inicioPlan); d <= hasta; d.setDate(d.getDate() + 1)) {
+      if (esDiaHabil(d, calendario.vacaciones || [])) {
+        const clave = fechaISO(d)
+        if (!consumidos.has(clave) && !yaAjustados.has(clave)) faltantes.push(new Date(d))
+      }
+    }
+    return { diasPlan, usados: consumidos.size, faltantes, valorDia, descuentoSugerido: faltantes.length * valorDia }
+  }
+
   const seleccionado = actividad.find((a) => a.id === seleccionadoId) || null
   const cafeteriaSeleccionada = seleccionado?.cafeteria || []
   const estanciaSeleccionada = seleccionado?.estancia || []
@@ -271,15 +305,15 @@ export default function Caja() {
 
   const consumosIndividuales = cafeteriaSeleccionada.filter((c) => !estaCubiertoPorMensualidad(c))
   const totalIndividualComedor = consumosIndividuales.reduce((s, c) => s + costoConsumo(c), 0)
-  const totalMensualidades = [...planesDesayuno, ...planesComida].reduce((s, p) => s + Number(p.monto || 0), 0)
+  const totalMensualidades = [...planesDesayuno, ...planesComida].reduce((s, p) => s + Number(p.montoAjustado ?? p.monto ?? 0), 0)
   const totalEstancia = estanciaSeleccionada.reduce((s, e) => s + (Number(e.costo) || 0), 0)
   const totalCafeteria = totalIndividualComedor + totalMensualidades
   const totalEsperado = totalCafeteria + totalEstancia
 
   const cargadoIndividual = consumosIndividuales.filter((c) => c.cargado).reduce((s, c) => s + costoConsumo(c), 0) + estanciaSeleccionada.filter((e) => e.cargado).reduce((s, e) => s + Number(e.costo || 0), 0)
   const pagadoIndividual = consumosIndividuales.filter((c) => c.pagado).reduce((s, c) => s + costoConsumo(c), 0) + estanciaSeleccionada.filter((e) => e.pagado).reduce((s, e) => s + Number(e.costo || 0), 0)
-  const cargadoMensual = [...planesDesayuno, ...planesComida].filter((p) => p.cargado).reduce((s, p) => s + Number(p.monto || 0), 0)
-  const pagadoMensual = [...planesDesayuno, ...planesComida].filter((p) => p.pagado).reduce((s, p) => s + Number(p.monto || 0), 0)
+  const cargadoMensual = [...planesDesayuno, ...planesComida].filter((p) => p.cargado).reduce((s, p) => s + Number(p.montoAjustado ?? p.monto ?? 0), 0)
+  const pagadoMensual = [...planesDesayuno, ...planesComida].filter((p) => p.pagado).reduce((s, p) => s + Number(p.montoAjustado ?? p.monto ?? 0), 0)
   const totalCargado = cargadoIndividual + cargadoMensual
   const totalPagado = pagadoIndividual + pagadoMensual
 
@@ -304,6 +338,39 @@ export default function Caja() {
       setError(err?.message || 'No fue posible actualizar el estado de cobro.')
     } finally {
       setGuardando('')
+    }
+  }
+
+  async function aplicarDescuentoInasistencia(plan, descuento, faltantes) {
+    if (!plan?.id || descuento <= 0) return
+    const ok = window.confirm(`Se aplicará un descuento de ${dinero(descuento)} a la mensualidad de ${plan.tipo === 'desayuno' ? 'desayuno' : 'comida'} por ${faltantes.length} día(s) sin consumo registrado.\n\nEste ajuste quedará guardado en la mensualidad y deberá aclararse con el tutor. ¿Continuar?`)
+    if (!ok) return
+    const key = `ajuste-${plan.id}`
+    setAplicandoAjuste(key)
+    setError('')
+    try {
+      const montoOriginal = Number(plan.monto || 0)
+      const descuentoAnterior = Number(plan.descuentoInasistencia || 0)
+      const nuevoDescuento = Math.min(montoOriginal, descuentoAnterior + descuento)
+      const montoAjustado = Math.max(montoOriginal - nuevoDescuento, 0)
+      await updateDoc(doc(db, 'planes_comedor', plan.id), {
+        montoOriginal: Number(plan.montoOriginal || montoOriginal),
+        descuentoInasistencia: nuevoDescuento,
+        montoAjustado,
+        diasDescontados: Number(plan.diasDescontados || 0) + faltantes.length,
+        incidenciasInasistencia: Array.from(new Set([...(plan.incidenciasInasistencia || []), ...faltantes.map(d => fechaISO(d))])),
+        ultimaIncidenciaInasistencia: serverTimestamp(),
+        ajustadoPor: user?.email || user?.uid || 'usuario',
+      })
+      const actualizar = (lista) => lista.map(p => p.id === plan.id ? { ...p, montoOriginal: Number(p.montoOriginal || montoOriginal), descuentoInasistencia: nuevoDescuento, montoAjustado, diasDescontados: Number(p.diasDescontados || 0) + faltantes.length } : p)
+      setPlanes(actualizar)
+      setPlanesTodos(actualizar)
+      registrarLog({ user, accion: 'caja.mensualidad_descuento_inasistencia', modulo: 'caja', entidad: 'planes_comedor', entidadId: plan.id, alumno: seleccionado, detalle: { descuento, dias: faltantes.length, fechas: faltantes.map(d => fechaISO(d)) } })
+    } catch (err) {
+      console.error(err)
+      setError(err?.message || 'No fue posible aplicar el descuento por inasistencia.')
+    } finally {
+      setAplicandoAjuste('')
     }
   }
 
@@ -532,11 +599,11 @@ export default function Caja() {
               {tienePermiso(user, 'caja.asignar_plan_comedor') && <button className="btn btn-outline btn-small" onClick={() => setMostrarMensualidad(v => !v)}>+ {mostrarMensualidad ? 'Cerrar' : 'Registrar'}</button>}
             </div>
 
-            {[...planesDesayuno, ...planesComida].map(plan => <PlanMensual key={plan.id} plan={plan} consumos={consumosMesPlan} vacaciones={calendario.vacaciones || []} cambiarEstado={cambiarEstadoMensualidad} guardando={guardando} puedeGestionar={tienePermiso(user, 'caja.asignar_plan_comedor')} />)}
+            {[...planesDesayuno, ...planesComida].map(plan => <PlanMensual key={plan.id} plan={plan} consumos={consumosMesPlan} vacaciones={calendario.vacaciones || []} incidencia={incidenciasMensualidad(plan)} cambiarEstado={cambiarEstadoMensualidad} aplicarDescuento={aplicarDescuentoInasistencia} aplicandoAjuste={aplicandoAjuste} guardando={guardando} puedeGestionar={tienePermiso(user, 'caja.asignar_plan_comedor')} />)}
 
             {mostrarMensualidad && <form onSubmit={crearMensualidad} className="caja-monthly-form">
               <div className="caja-form-grid">
-                <label><span>Plan del catálogo</span><select className="input" value={formMensualidad.planCatalogoId} onChange={e => { const id = e.target.value; const p = catalogoPlanes.find(x => x.id === id); setFormMensualidad({ ...formMensualidad, planCatalogoId: id, tipo: p?.tipo || formMensualidad.tipo, monto: p?.monto ?? formMensualidad.monto }) }}><option value="">Captura manual</option>{catalogoPlanes.map(p => <option key={p.id} value={p.id}>{p.nombre} · ${Number(p.monto || 0).toFixed(2)}</option>)}</select></label>
+                <label><span>Plan del catálogo</span><select className="input" value={formMensualidad.planCatalogoId} onChange={e => { const id = e.target.value; const p = catalogoPlanes.find(x => x.id === id); setFormMensualidad({ ...formMensualidad, planCatalogoId: id, tipo: p?.tipo || formMensualidad.tipo, monto: p?.monto ?? formMensualidad.monto }) }}><option value="">Captura manual</option>{catalogoPlanes.map(p => <option key={p.id} value={p.id}>{p.nombre} · ${Number(p.montoAjustado ?? p.monto ?? 0).toFixed(2)}</option>)}</select></label>
                 <label><span>Concepto</span><select className="input" value={formMensualidad.tipo} disabled={Boolean(formMensualidad.planCatalogoId)} onChange={e => setFormMensualidad({ ...formMensualidad, tipo: e.target.value })}><option value="desayuno">Desayuno</option><option value="comida">Comida</option></select></label>
                 <label><span>Monto mensual</span><input className="input" type="number" min="0" step="0.01" value={formMensualidad.monto} readOnly={Boolean(formMensualidad.planCatalogoId)} placeholder="0.00" onChange={e => setFormMensualidad({ ...formMensualidad, monto: e.target.value })}/></label>
               </div>
@@ -565,25 +632,34 @@ function Mini({ titulo, valor }) { return <div style={{ padding: '0.75rem', bord
 function Modulo({ titulo, total, detalle, activo, onClick }) { return <button onClick={onClick} className="card" style={{ padding: '1rem', textAlign: 'left', cursor: 'pointer', border: `2px solid ${activo ? 'var(--red-600)' : 'var(--border)'}`, background: activo ? 'var(--surface-sunken)' : 'var(--surface)' }}><div style={{ fontWeight: 800 }}>{titulo}</div><div style={{ fontSize: '1.35rem', marginTop: '0.3rem' }}>{dinero(total)}</div><div style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>{detalle} · {activo ? 'ocultar detalle' : 'ver detalle'}</div></button> }
 function Check({ label, checked, disabled, onChange }) { return <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', opacity: disabled ? 0.5 : 1 }}><input type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={e => onChange(e.target.checked)} />{label}</label> }
 
-function PlanMensual({ plan, consumos, vacaciones, cambiarEstado, guardando, puedeGestionar }) {
+function PlanMensual({ plan, consumos, vacaciones, incidencia, cambiarEstado, aplicarDescuento, aplicandoAjuste, guardando, puedeGestionar }) {
   const inicio = plan.fechaInicio?.toDate ? plan.fechaInicio.toDate() : new Date(plan.fechaInicio)
   const fin = plan.fechaFin?.toDate ? plan.fechaFin.toDate() : new Date(plan.fechaFin)
-  const usados = new Set(consumos.filter(c => c.tipo === plan.tipo && c.fecha && c.fecha >= inicio && c.fecha <= fin && esDiaHabil(c.fecha, vacaciones || [])).map(c => fechaISO(c.fecha))).size
-  const dias = contarDiasHabiles(inicio, fin, vacaciones || [])
+  const dias = incidencia?.diasPlan || contarDiasHabiles(inicio, fin, vacaciones || [])
+  const usados = incidencia?.usados || 0
+  const descuento = Number(plan.descuentoInasistencia || 0)
+  const montoVisible = Number(plan.montoAjustado ?? plan.monto ?? 0)
+  const faltantes = incidencia?.faltantes || []
   return <div style={{ marginTop: '0.65rem', padding: '0.8rem', border: '1px solid var(--border)', borderRadius: 10 }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
       <div><strong>{plan.tipo === 'desayuno' ? '🍳 Desayuno mensual' : '🍲 Comida mensual'}</strong><div style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>{formatoFecha(inicio)} → {formatoFecha(fin)} · {dias} días hábiles</div></div>
-      <strong>{dinero(plan.monto)}</strong>
+      <div style={{ textAlign: 'right' }}><strong>{dinero(montoVisible)}</strong>{descuento > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--ink-muted)' }}>Original {dinero(plan.monto)} · descuento {dinero(descuento)}</div>}</div>
     </div>
     <div style={{ marginTop: '0.65rem' }}><strong>{usados} / {dias}</strong> servicios utilizados · {Math.max(dias - usados, 0)} restantes</div>
+    {faltantes.length > 0 && <div style={{ marginTop: '0.7rem', padding: '0.65rem', borderRadius: 8, background: 'var(--surface-sunken)', border: '1px solid var(--border)' }}>
+      <strong>⚠️ Incidencia de asistencia de comedor</strong>
+      <div style={{ fontSize: '0.76rem', marginTop: 3 }}>{faltantes.length} día(s) hábil(es) sin consumo registrado. Descuento sugerido: <strong>{dinero(incidencia.descuentoSugerido)}</strong>.</div>
+      <div style={{ fontSize: '0.72rem', color: 'var(--ink-muted)', marginTop: 3 }}>{faltantes.slice(0, 8).map(d => fechaISO(d)).join(' · ')}{faltantes.length > 8 ? ' · …' : ''}</div>
+      {puedeGestionar && incidencia.descuentoSugerido > 0 && <button className="btn btn-outline btn-small" style={{ marginTop: '0.5rem' }} disabled={aplicandoAjuste === `ajuste-${plan.id}`} onClick={() => aplicarDescuento(plan, incidencia.descuentoSugerido, faltantes)}>{aplicandoAjuste === `ajuste-${plan.id}` ? 'Aplicando…' : 'Aplicar descuento y dejar incidencia'}</button>}
+      <div style={{ fontSize: '0.68rem', color: 'var(--ink-muted)', marginTop: 4 }}>La incidencia se calcula por ausencia de consumo registrado; Caja debe confirmar que el alumno realmente no acudió antes de aplicarla.</div>
+    </div>}
     <div style={{ display: 'flex', gap: '1rem', marginTop: '0.65rem', flexWrap: 'wrap' }}>
       <Check label="Cargado" checked={plan.cargado} disabled={!puedeGestionar || guardando === `planes_comedor-${plan.id}-cargado`} onChange={v => cambiarEstado(plan.id, 'cargado', v)} />
       <Check label="Pagado" checked={plan.pagado} disabled={!puedeGestionar || !plan.cargado || guardando === `planes_comedor-${plan.id}-pagado`} onChange={v => cambiarEstado(plan.id, 'pagado', v)} />
-      {plan.pagado ? <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>✓ Mensualidad pagada. Los consumos de {plan.tipo} dentro del periodo quedan cubiertos.</span> : <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>⚠️ Mensualidad activa y aún pendiente de pago. No se generan cargos individuales para este concepto.</span>}
+      {plan.pagado ? <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>✓ {plan.tipo === 'desayuno' ? 'Desayuno' : 'Comida'} pagado de forma independiente.</span> : <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>⚠️ {plan.tipo === 'desayuno' ? 'Desayuno' : 'Comida'} pendiente de pago.</span>}
     </div>
   </div>
 }
-
 function DetalleComedor({ rows, config, cambiarEstado, guardando, planesDesayuno, planesComida, planDesayunoPagado, planComidaPagado, planDesayunoActivo, planComidaActivo, consumosTotales }) {
   const totalDesayunos = consumosTotales.filter(c => c.tipo === 'desayuno').length
   const totalComidas = consumosTotales.filter(c => c.tipo === 'comida').length
