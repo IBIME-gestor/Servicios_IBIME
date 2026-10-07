@@ -140,11 +140,14 @@ export const CATALOGO_PERMISOS = [
 
 export const PERMISOS_COLABORADOR = ['alumnos.ver']
 
-export function tienePermiso(user, clave) {
-  if (!user?.permisos) return false
+export function normalizarPermisos(permisos) {
+  if (!Array.isArray(permisos)) return []
+  return [...new Set(permisos.map((p) => String(p || '').trim()).filter(Boolean))]
+}
 
-  return (
-    user.permisos.includes(PERMISO_ADMIN) ||
-    user.permisos.includes(clave)
-  )
+export function tienePermiso(user, clave) {
+  const permisos = normalizarPermisos(user?.permisos)
+  if (!clave) return false
+
+  return permisos.includes(PERMISO_ADMIN) || permisos.includes(clave)
 }
