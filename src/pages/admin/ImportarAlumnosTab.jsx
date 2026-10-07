@@ -1,3 +1,4 @@
+
 import { useMemo, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { registrarLog } from '../../lib/log'
@@ -67,7 +68,7 @@ export default function ImportarAlumnosTab() {
         Encabezados esperados en la primera hoja:
       </p>
       <p style={{ fontSize: '0.8rem', fontWeight: 700, marginTop: 0 }}>
-        MATRICULA · NOMBRE · CORREO · PLANTEL · NIVEL · GRADO · GRUPO · TUTOR RESPONSABLE · TELEFONO TUTOR RESPONSABLE
+        MATRICULA · NOMBRE · CORREO (alumno) · CORREO TUTOR · PLANTEL · NIVEL · GRADO · GRUPO · TUTOR RESPONSABLE · TELEFONO TUTOR RESPONSABLE
       </p>
       <p style={{ color: 'var(--ink-muted)', fontSize: '0.9rem' }}>
         Si un alumno con la misma matrícula ya existe, se actualizan sus datos (no se duplica).
