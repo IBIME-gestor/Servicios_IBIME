@@ -1,17 +1,18 @@
 import * as XLSX from 'xlsx'
 import { writeBatch, doc, collection } from 'firebase/firestore'
 import { db } from '../firebase'
-import { normalizar } from './alumnos'
+import { normalizar, guardarCatalogoAlumnos } from './alumnos'
 
 /**
  * Columnas esperadas del Excel de alumnos:
- * MATRICULA | NOMBRE | CORREO | PLANTEL | NIVEL | GRADO | GRUPO |
+ * MATRICULA | NOMBRE | CORREO (alumno) | CORREO TUTOR | PLANTEL | NIVEL | GRADO | GRUPO |
  * TUTOR RESPONSABLE | TELEFONO TUTOR RESPONSABLE
  */
 export const CAMPOS_ALUMNO = [
   { clave: 'matricula', etiqueta: 'Matrícula (identificador único)', requerido: true, sinonimos: ['matricula'] },
   { clave: 'nombre', etiqueta: 'Nombre del alumno', requerido: true, sinonimos: ['nombre', 'nombre del alumno', 'alumno'] },
-  { clave: 'correoAlumno', etiqueta: 'Correo', requerido: false, sinonimos: ['correo', 'correo alumno', 'correo del alumno', 'email'] },
+  { clave: 'correoAlumno', etiqueta: 'Correo del alumno', requerido: false, sinonimos: ['correo', 'correo alumno', 'correo del alumno', 'correo electronico', 'email', 'email alumno'] },
+  { clave: 'correoTutor', etiqueta: 'Correo del tutor', requerido: false, sinonimos: ['correo tutor', 'correo del tutor', 'correo tutor responsable', 'correo del tutor responsable', 'email tutor', 'correo padre', 'correo padre o tutor'] },
   { clave: 'plantel', etiqueta: 'Plantel', requerido: true, sinonimos: ['plantel'] },
   { clave: 'nivel', etiqueta: 'Nivel', requerido: false, sinonimos: ['nivel'] },
   { clave: 'grado', etiqueta: 'Grado', requerido: false, sinonimos: ['grado'] },
@@ -69,6 +70,7 @@ const texto = (fila, columna) => (columna ? String(fila[columna] ?? '').trim() :
 export async function importarAlumnos(rows, mapeo) {
   const batchSize = 400 // límite de Firestore: 500 por batch
   let importados = 0
+  const catalogo = { planteles: [], niveles: [], grados: [], grupos: [] }
 
   for (let i = 0; i < rows.length; i += batchSize) {
     const lote = rows.slice(i, i + batchSize)
@@ -84,7 +86,9 @@ export async function importarAlumnos(rows, mapeo) {
         {
           matricula,
           nombre: texto(fila, mapeo.nombre),
-          correoAlumno: texto(fila, mapeo.correoAlumno),
+          nombreBusqueda: normalizar(texto(fila, mapeo.nombre)),
+          correoAlumno: texto(fila, mapeo.correoAlumno).toLowerCase(),
+          correoTutor: texto(fila, mapeo.correoTutor).toLowerCase(),
           plantel: texto(fila, mapeo.plantel),
           nivel: texto(fila, mapeo.nivel),
           grado: texto(fila, mapeo.grado),
@@ -95,6 +99,10 @@ export async function importarAlumnos(rows, mapeo) {
         },
         { merge: true }
       )
+      catalogo.planteles.push(texto(fila, mapeo.plantel))
+      catalogo.niveles.push(texto(fila, mapeo.nivel))
+      catalogo.grados.push(texto(fila, mapeo.grado))
+      catalogo.grupos.push(texto(fila, mapeo.grupo))
       enLote++
       importados++
     })
@@ -102,5 +110,7 @@ export async function importarAlumnos(rows, mapeo) {
     if (enLote > 0) await batch.commit()
   }
 
+  // Valores para los filtros del directorio (así no hay que leer todos los alumnos).
+  await guardarCatalogoAlumnos(catalogo)
   return importados
 }
