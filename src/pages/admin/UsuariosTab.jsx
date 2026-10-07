@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listarUsuarios, actualizarPermisosUsuario, actualizarActivoUsuario } from '../../lib/usuarios'
-import { CATALOGO_PERMISOS, PERMISO_ADMIN, PERMISOS_COLABORADOR } from '../../lib/permisos'
+import { CATALOGO_PERMISOS, PERMISO_ADMIN, PERMISOS_COLABORADOR, normalizarPermisos } from '../../lib/permisos'
 import { useAuth } from '../../contexts/AuthContext'
 import { listarPlanteles, PLANTEL_TODOS } from '../../lib/alumnos'
 import { registrarLog } from '../../lib/log'
@@ -96,7 +96,7 @@ export default function UsuariosTab() {
 
 function EditorPermisos({ usuario, planteles, esUnoMismo, onCerrar, onGuardado }) {
   const { user: yo } = useAuth()
-  const [permisos, setPermisos] = useState(usuario.permisos || PERMISOS_COLABORADOR)
+  const [permisos, setPermisos] = useState(normalizarPermisos(usuario.permisos?.length ? usuario.permisos : PERMISOS_COLABORADOR))
   const [activo, setActivo] = useState(usuario.activo !== false)
   const [plantel, setPlantel] = useState(usuario.plantel || '')
   const [guardando, setGuardando] = useState(false)
