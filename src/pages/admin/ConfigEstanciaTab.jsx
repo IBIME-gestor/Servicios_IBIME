@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '../../contexts/AuthContext'
+import { registrarLog } from '../../lib/log'
 import { CONFIG_ESTANCIA_DEFAULT, obtenerConfigEstancia, guardarConfigEstancia, calcularCostoEstancia } from '../../lib/pricing'
 
 const dinero = (n) => `$${Number(n || 0).toFixed(2)} MXN`
 
 export default function ConfigEstanciaTab() {
+  const { user } = useAuth()
   const [config, setConfig] = useState(CONFIG_ESTANCIA_DEFAULT)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
@@ -13,7 +16,7 @@ export default function ConfigEstanciaTab() {
   async function handleGuardar(e) {
     e.preventDefault()
     setGuardando(true); setGuardado(false)
-    try { await guardarConfigEstancia(config); setGuardado(true) } finally { setGuardando(false) }
+    try { await guardarConfigEstancia(config); registrarLog({ user, accion: 'admin.config_estancia', modulo: 'admin', entidad: 'config', entidadId: 'estancia', detalle: config }); setGuardado(true) } finally { setGuardando(false) }
   }
 
   const ejemplos = [30, 60, 75, 90, 125].map(min => ({ min, ...calcularCostoEstancia(min, config) }))
