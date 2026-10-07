@@ -1,71 +1,89 @@
-import { useState } from 'react'
-import { leerExcel, importarAlumnos } from '../../lib/excelImport'
-
-const CAMPOS = [
-  { clave: 'nombre', etiqueta: 'Nombre del alumno', requerido: true },
-  { clave: 'matricula', etiqueta: 'Matrícula (identificador único)', requerido: true },
-  { clave: 'grado', etiqueta: 'Grado', requerido: false },
-  { clave: 'grupo', etiqueta: 'Grupo', requerido: false },
-  { clave: 'contacto', etiqueta: 'Correo padre/madre/tutor', requerido: false },
-  { clave: 'correoAlumno', etiqueta: 'Correo alumno', requerido: false },
-]
+import { useMemo, useState } from 'react'
+import { leerExcel, importarAlumnos, detectarMapeo, CAMPOS_ALUMNO } from '../../lib/excelImport'
 
 export default function ImportarAlumnosTab() {
-  const [archivo, setArchivo] = useState(null)
   const [headers, setHeaders] = useState([])
   const [rows, setRows] = useState([])
   const [mapeo, setMapeo] = useState({})
   const [importando, setImportando] = useState(false)
   const [resultado, setResultado] = useState('')
+  const [error, setError] = useState('')
 
   async function handleArchivo(e) {
     const file = e.target.files[0]
     if (!file) return
-    setArchivo(file)
     setResultado('')
-    const { headers, rows } = await leerExcel(file)
-    setHeaders(headers)
-    setRows(rows)
-
-    // intenta adivinar el mapeo por nombre de columna parecido
-    const adivinado = {}
-    CAMPOS.forEach((c) => {
-      const match = headers.find((h) => h.toLowerCase().includes(c.clave.slice(0, 4)))
-      if (match) adivinado[c.clave] = match
-    })
-    setMapeo(adivinado)
+    setError('')
+    try {
+      const { headers, rows } = await leerExcel(file)
+      setHeaders(headers)
+      setRows(rows)
+      setMapeo(detectarMapeo(headers))
+    } catch (err) {
+      console.error(err)
+      setHeaders([])
+      setRows([])
+      setError('No se pudo leer el archivo. Verifica que sea un .xlsx o .xls válido.')
+    }
   }
 
   async function handleImportar() {
     setImportando(true)
     setResultado('')
+    setError('')
     try {
       const total = await importarAlumnos(rows, mapeo)
       setResultado(`Se importaron ${total} alumnos correctamente.`)
     } catch (err) {
-      setResultado('Ocurrió un error al importar. Revisa el mapeo de columnas.')
+      console.error(err)
+      setError(err?.message || 'Ocurrió un error al importar. Revisa el mapeo de columnas.')
     } finally {
       setImportando(false)
     }
   }
 
-  const listoParaImportar = mapeo.nombre && mapeo.matricula && rows.length > 0
+  const faltantes = CAMPOS_ALUMNO.filter((c) => c.requerido && !mapeo[c.clave])
+  const listoParaImportar = faltantes.length === 0 && rows.length > 0
+
+  // Resumen por plantel para validar el archivo antes de importar.
+  const resumenPlanteles = useMemo(() => {
+    if (!mapeo.plantel) return []
+    const conteo = new Map()
+    rows.forEach((fila) => {
+      const p = String(fila[mapeo.plantel] ?? '').trim() || '(sin plantel)'
+      conteo.set(p, (conteo.get(p) || 0) + 1)
+    })
+    return Array.from(conteo.entries()).sort((a, b) => a[0].localeCompare(b[0], 'es'))
+  }, [rows, mapeo.plantel])
 
   return (
-    <div style={{ maxWidth: 640 }}>
+    <div style={{ maxWidth: 680 }}>
       <h3 style={{ marginTop: 0 }}>Cargar base de alumnos (.xlsx / .xls)</h3>
+      <p style={{ color: 'var(--ink-muted)', fontSize: '0.9rem', marginBottom: '0.4rem' }}>
+        Encabezados esperados en la primera hoja:
+      </p>
+      <p style={{ fontSize: '0.8rem', fontWeight: 700, marginTop: 0 }}>
+        MATRICULA · NOMBRE · CORREO · PLANTEL · NIVEL · GRADO · GRUPO · TUTOR RESPONSABLE · TELEFONO TUTOR RESPONSABLE
+      </p>
       <p style={{ color: 'var(--ink-muted)', fontSize: '0.9rem' }}>
         Si un alumno con la misma matrícula ya existe, se actualizan sus datos (no se duplica).
       </p>
 
       <input type="file" accept=".xlsx,.xls" onChange={handleArchivo} style={{ marginBottom: '1.25rem' }} />
 
+      {error && <div className="card form-error">⚠️ {error}</div>}
+
       {headers.length > 0 && (
         <div className="card" style={{ padding: '1.25rem', marginBottom: '1.25rem' }}>
           <h4 style={{ marginTop: 0, fontSize: '0.95rem' }}>
-            Empareja las columnas de tu Excel ({rows.length} filas detectadas)
+            Columnas detectadas ({rows.length} filas)
           </h4>
-          {CAMPOS.map((c) => (
+          {faltantes.length > 0 && (
+            <p style={{ color: 'var(--red-600)', fontSize: '0.85rem' }}>
+              Falta emparejar: {faltantes.map((c) => c.etiqueta).join(', ')}.
+            </p>
+          )}
+          {CAMPOS_ALUMNO.map((c) => (
             <div key={c.clave} style={{ marginBottom: '0.75rem' }}>
               <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>
                 {c.etiqueta} {c.requerido && <span style={{ color: 'var(--red-600)' }}>*</span>}
@@ -82,6 +100,18 @@ export default function ImportarAlumnosTab() {
               </select>
             </div>
           ))}
+
+          {resumenPlanteles.length > 0 && (
+            <div style={{ marginTop: '1rem', paddingTop: '0.8rem', borderTop: '1px solid var(--border)' }}>
+              <strong style={{ fontSize: '0.85rem' }}>Alumnos por plantel en el archivo</strong>
+              {resumenPlanteles.map(([plantel, n]) => (
+                <div key={plantel} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '0.2rem 0' }}>
+                  <span>{plantel}</span>
+                  <span>{n}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
