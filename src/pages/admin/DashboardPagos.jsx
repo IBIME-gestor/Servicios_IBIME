@@ -2,16 +2,24 @@ import { useEffect, useState } from 'react'
 import { consumosSemanaTodos, costoConsumo } from '../../lib/consumos'
 import { estanciasSemanaTodas } from '../../lib/estancia'
 import { obtenerConfigComedor } from '../../lib/pricingComedor'
+import { useAuth } from '../../contexts/AuthContext'
+import { listarAlumnosActivos, filtrarPorPlantel, puedeVerTodosLosPlanteles } from '../../lib/alumnos'
 
 const dinero = n => `$${Number(n || 0).toFixed(2)} MXN`
 
 export default function DashboardPagos() {
+  const { user } = useAuth()
   const [cargando, setCargando] = useState(true)
   const [datos, setDatos] = useState(null)
 
   async function cargar() {
     setCargando(true)
-    const [consumos, estancias, config] = await Promise.all([consumosSemanaTodos(), estanciasSemanaTodas(), obtenerConfigComedor()])
+    const [consumosTodos, estanciasTodas, config, alumnos] = await Promise.all([consumosSemanaTodos(), estanciasSemanaTodas(), obtenerConfigComedor(), listarAlumnosActivos()])
+    // Quien no ve todos los planteles solo suma lo de su plantel.
+    const ids = new Set(filtrarPorPlantel(alumnos, user).map(a => a.id))
+    const todos = puedeVerTodosLosPlanteles(user)
+    const consumos = todos ? consumosTodos : consumosTodos.filter(c => ids.has(c.alumnoId))
+    const estancias = todos ? estanciasTodas : estanciasTodas.filter(e => ids.has(e.alumnoId))
     const cerradas = estancias.filter(e => e.horaSalida)
     const cafeteria = consumos.map(c => ({ ...c, costoCalculado: costoConsumo(c, config) }))
     const totalCaf = cafeteria.reduce((s,c)=>s+c.costoCalculado,0)
@@ -20,9 +28,11 @@ export default function DashboardPagos() {
     const pagEst = cerradas.filter(e=>e.pagado).reduce((s,e)=>s+(Number(e.costo)||0),0)
     const cargCaf = cafeteria.filter(c=>c.cargado).reduce((s,c)=>s+c.costoCalculado,0)
     const cargEst = cerradas.filter(e=>e.cargado).reduce((s,e)=>s+(Number(e.costo)||0),0)
+    const estEfectivo = cerradas.filter(e=>e.pagado && e.metodoPago==='efectivo').reduce((s,e)=>s+(Number(e.costo)||0),0)
+    const estCometa = cerradas.filter(e=>e.pagado && e.metodoPago==='cometa').reduce((s,e)=>s+(Number(e.costo)||0),0)
     setDatos({
       cafeteria:{registros:cafeteria.length,cargados:cafeteria.filter(c=>c.cargado).length,pagados:cafeteria.filter(c=>c.pagado).length,total:totalCaf,cargado:cargCaf,pagado:pagCaf},
-      estancia:{registros:cerradas.length,cargados:cerradas.filter(e=>e.cargado).length,pagados:cerradas.filter(e=>e.pagado).length,total:totalEst,cargado:cargEst,pagado:pagEst},
+      estancia:{registros:cerradas.length,cargados:cerradas.filter(e=>e.cargado).length,pagados:cerradas.filter(e=>e.pagado).length,total:totalEst,cargado:cargEst,pagado:pagEst,efectivo:estEfectivo,cometa:estCometa},
     })
     setCargando(false)
   }
@@ -44,6 +54,8 @@ export default function DashboardPagos() {
       <h3 style={{marginTop:0}}>Resumen de dinero cobrado</h3>
       <Fila label="Comedor pagado" value={datos.cafeteria.pagado}/>
       <Fila label="Estancia pagada" value={datos.estancia.pagado}/>
+      <Fila label="   · de estancia, en efectivo" value={datos.estancia.efectivo}/>
+      <Fila label="   · de estancia, en Cometa" value={datos.estancia.cometa}/>
       <Fila label="TOTAL COBRADO" value={datos.cafeteria.pagado+datos.estancia.pagado} fuerte/>
       <div style={{marginTop:'0.7rem',paddingTop:'0.7rem',borderTop:'1px solid var(--border)',color:'var(--ink-muted)',fontSize:'0.82rem'}}>Pendiente estimado: {dinero(pendienteCaf+pendienteEst)}</div>
     </div>
