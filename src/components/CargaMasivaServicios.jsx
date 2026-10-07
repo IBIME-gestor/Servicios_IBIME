@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { listarAlumnosActivos, filtrarAlumnos } from '../lib/alumnos'
+import { listarAlumnosActivos, filtrarAlumnos, filtrarPorPlantel, descripcionAlumno } from '../lib/alumnos'
 import {
   registrarConsumosRetroactivos,
   registrarEstanciaRetroactiva,
@@ -55,7 +55,7 @@ export default function CargaMasivaServicios({ tipo = 'comedor' }) {
 
     listarAlumnosActivos()
       .then((lista) => {
-        if (activo) setAlumnos(lista)
+        if (activo) setAlumnos(filtrarPorPlantel(lista, user))
       })
       .catch((e) => {
         if (activo) {
@@ -330,8 +330,7 @@ export default function CargaMasivaServicios({ tipo = 'comedor' }) {
                           color: 'var(--ink-muted)',
                         }}
                       >
-                        {alumno.matricula} · {alumno.grado}{' '}
-                        {alumno.grupo}
+                        {descripcionAlumno(alumno)}
                       </div>
                     </button>
                   ))}
