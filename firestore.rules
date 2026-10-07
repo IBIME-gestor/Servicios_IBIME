@@ -66,6 +66,16 @@ service cloud.firestore {
     }
 
 
+    // Bitácora de auditoría: cualquiera con sesión puede AGREGAR un registro
+    // solo a su propio correo; nadie lo edita ni lo borra; solo lo lee quien
+    // tenga admin.log (o el administrador).
+    match /log/{logId} {
+      allow create: if estaAutenticado()
+        && request.resource.data.usuarioEmail == request.auth.token.email.lower();
+      allow read: if tengoPermiso('admin.log');
+      allow update, delete: if false;
+    }
+
     // Mensualidades/planes asignados a alumnos. Caja puede asignarlos con
     // el permiso específico; administración conserva control del catálogo.
     match /planes_comedor/{planId} {
