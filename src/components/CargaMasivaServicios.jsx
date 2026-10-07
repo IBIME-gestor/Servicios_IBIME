@@ -1,4 +1,3 @@
-```jsx
 import { useEffect, useMemo, useState } from 'react'
 import { listarAlumnosActivos, filtrarAlumnos } from '../lib/alumnos'
 import {
@@ -475,4 +474,3 @@ export default function CargaMasivaServicios({ tipo = 'comedor' }) {
     </div>
   )
 }
-```
