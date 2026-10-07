@@ -30,6 +30,7 @@ import { db } from '../../firebase'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
 import { obtenerCalendario, contarDiasHabiles, esDiaHabil, rangoMes, fechaISO } from '../../lib/calendario'
 import { tienePermiso } from '../../lib/permisos'
+import { registrarLog } from '../../lib/log'
 import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 
 const dinero = (n) => `$${Number(n || 0).toFixed(2)} MXN`
@@ -115,6 +116,29 @@ async function cargarPlanesAlumno(alumnoId) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
+async function cargarPlanesRango(inicio, fin) {
+  const snap = await getDocs(collection(db, 'planes_comedor'))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.activo !== false && solapaRango(p, inicio, fin))
+}
+
+/** Esperado / cargado / pagado de un alumno en el periodo (misma regla que el detalle). */
+function finanzasAlumno(a, planesTodos, config) {
+  const planes = planesTodos.filter((p) => p.alumnoId === a.id)
+  const cubreDesayuno = planes.some((p) => p.tipo === 'desayuno')
+  const cubreComida = planes.some((p) => p.tipo === 'comida')
+  const individuales = a.cafeteria.filter((c) => (c.tipo === 'desayuno' ? !cubreDesayuno : !cubreComida))
+  const filas = [
+    ...individuales.map((c) => ({ monto: costoConsumoLocal(c, config), cargado: c.cargado, pagado: c.pagado })),
+    ...planes.map((p) => ({ monto: Number(p.monto || 0), cargado: p.cargado, pagado: p.pagado })),
+    ...a.estancia.map((e) => ({ monto: Number(e.costo) || 0, cargado: e.cargado, pagado: e.pagado })),
+  ]
+  const suma = (f) => filas.filter(f).reduce((t, x) => t + x.monto, 0)
+  const esperado = suma(() => true)
+  const cargado = suma((x) => x.cargado)
+  const pagado = suma((x) => x.pagado)
+  return { esperado, cargado, pagado, pendiente: Math.max(esperado - pagado, 0), planes: planes.length }
+}
+
 export default function Caja() {
   const { user } = useAuth()
   const hoy = new Date()
@@ -128,6 +152,7 @@ export default function Caja() {
   const [configComedor, setConfigComedor] = useState(null)
   const [catalogoPlanes, setCatalogoPlanes] = useState([])
   const [planes, setPlanes] = useState([])
+  const [planesTodos, setPlanesTodos] = useState([])
   const [texto, setTexto] = useState('')
   const [filtroPlantel, setFiltroPlantel] = useState('')
   const [filtroNivel, setFiltroNivel] = useState('')
@@ -154,14 +179,16 @@ export default function Caja() {
     setCargando(true)
     setError('')
     try {
-      const [a, c, e, cfg, cfgPlanes, cfgCalendario] = await Promise.all([
+      const [a, c, e, cfg, cfgPlanes, cfgCalendario, planesPeriodo] = await Promise.all([
         listarAlumnosActivos(),
         cargarConsumosRango(inicio, fin),
         cargarEstanciasRango(inicio, fin),
         obtenerConfigComedor(),
         listarPlanesComedor(),
         obtenerCalendario(),
+        cargarPlanesRango(inicio, fin),
       ])
+      setPlanesTodos(planesPeriodo)
       setAlumnos(filtrarPorPlantel(a, user))
       setConsumos(c)
       setEstancias(e.filter((x) => x.horaSalida))
@@ -188,10 +215,16 @@ export default function Caja() {
     const mapa = new Map(alumnos.map((a) => [a.id, { ...a, cafeteria: [], estancia: [] }]))
     consumos.forEach((c) => mapa.get(c.alumnoId)?.cafeteria.push(c))
     estancias.forEach((e) => mapa.get(e.alumnoId)?.estancia.push(e))
-    return Array.from(mapa.values())
-  }, [alumnos, consumos, estancias])
+    return Array.from(mapa.values()).map((a) => ({ ...a, fin: finanzasAlumno(a, planesTodos, configComedor) }))
+  }, [alumnos, consumos, estancias, planesTodos, configComedor])
 
-  const alumnosEnRegistro = actividad.filter((a) => a.cafeteria.length || a.estancia.length)
+  // Totales del periodo de todos los alumnos visibles (los tres KPIs de dinero).
+  const totalesPeriodo = useMemo(() => actividad.reduce(
+    (t, a) => ({ esperado: t.esperado + a.fin.esperado, cargado: t.cargado + a.fin.cargado, pagado: t.pagado + a.fin.pagado }),
+    { esperado: 0, cargado: 0, pagado: 0 }
+  ), [actividad])
+
+  const alumnosEnRegistro = actividad.filter((a) => a.cafeteria.length || a.estancia.length || a.fin.planes)
   const verTodosPlanteles = puedeVerTodosLosPlanteles(user)
   const planteles = useMemo(() => plantelesDe(alumnos), [alumnos])
   const niveles = useMemo(() => Array.from(new Set(alumnos.map((a) => String(a.nivel || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es')), [alumnos])
@@ -258,6 +291,10 @@ export default function Caja() {
         // Permitir revertir el pago solo a quien tenga permisos en las reglas.
       }
       await marcarDetalleCobro({ coleccion, id, campo, valor, usuario: user?.email || user?.uid || 'usuario' })
+      registrarLog({
+        user, accion: `caja.${campo}_${valor ? 'marcar' : 'desmarcar'}`, modulo: 'caja', entidad: coleccion, entidadId: id,
+        alumno: seleccionado, detalle: { campo, valor: Boolean(valor) },
+      })
       const aplicar = (lista) => lista.map((x) => x.id === id ? { ...x, [campo]: valor } : x)
       if (coleccion === 'consumos') setConsumos(aplicar)
       else if (coleccion === 'estancias') setEstancias(aplicar)
@@ -308,6 +345,11 @@ export default function Caja() {
         creadoPor: user?.email || user?.uid || 'usuario',
         creadoEn: serverTimestamp(),
       })
+      registrarLog({
+        user, accion: 'caja.mensualidad_crear', modulo: 'caja', entidad: 'planes_comedor', alumno: seleccionado,
+        detalle: { tipo, monto, mes: mesClave, plan: planCatalogo?.nombre || 'manual' },
+      })
+      setPlanesTodos(await cargarPlanesRango(inicio, fin))
       const p = await cargarPlanesAlumno(seleccionado.id)
       setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
       const consumosMes = await cargarConsumosMesAlumno(seleccionado.id, mes.inicio, mes.fin)
@@ -333,6 +375,11 @@ export default function Caja() {
         [`fecha${campo[0].toUpperCase()}${campo.slice(1)}`]: serverTimestamp(),
       })
       setPlanes((lista) => lista.map((p) => p.id === id ? { ...p, [campo]: Boolean(valor) } : p))
+      setPlanesTodos((lista) => lista.map((p) => p.id === id ? { ...p, [campo]: Boolean(valor) } : p))
+      registrarLog({
+        user, accion: `caja.mensualidad_${campo}_${valor ? 'marcar' : 'desmarcar'}`, modulo: 'caja', entidad: 'planes_comedor', entidadId: id,
+        alumno: seleccionado, detalle: { campo, valor: Boolean(valor) },
+      })
     } catch (err) {
       console.error(err)
       setError(err?.message || 'No fue posible actualizar la mensualidad.')
@@ -385,30 +432,45 @@ export default function Caja() {
           activo={panelResumen === 'estancia'}
           onClick={() => setPanelResumen(panelResumen === 'estancia' ? null : 'estancia')}
         />
-        <Kpi titulo="Esperado" valor={dinero(totalEsperado)} />
-        <Kpi titulo="Cargado" valor={dinero(totalCargado)} />
-        <Kpi titulo="Pagado" valor={dinero(totalPagado)} />
+        {[['esperado', 'Esperado'], ['cargado', 'Cargado'], ['pagado', 'Pagado']].map(([clave, titulo]) => (
+          <Kpi
+            key={clave}
+            titulo={titulo}
+            valor={dinero(totalesPeriodo[clave])}
+            desplegable
+            activo={panelResumen === clave}
+            onClick={() => setPanelResumen(panelResumen === clave ? null : clave)}
+          />
+        ))}
       </div>
 
-      {panelResumen && (
-        <div className="card caja-summary-panel">
-          <div className="section-heading">
-            <div>
-              <strong>{panelResumen === 'comedor' ? 'Alumnos con comedor' : 'Alumnos con estancia'}</strong>
-              <span>Haz clic en un alumno para abrir su desglose a la derecha.</span>
+      {panelResumen && (() => {
+        const esDinero = ['esperado', 'cargado', 'pagado'].includes(panelResumen)
+        const titulos = { comedor: 'Alumnos con comedor', estancia: 'Alumnos con estancia', esperado: 'Esperado por alumno', cargado: 'Cargado por alumno', pagado: 'Pagado por alumno' }
+        const filas = actividad
+          .filter((a) => (esDinero ? a.fin[panelResumen] > 0 : panelResumen === 'comedor' ? a.cafeteria.length : a.estancia.length))
+          .sort((x, y) => (esDinero ? y.fin[panelResumen] - x.fin[panelResumen] : x.nombre.localeCompare(y.nombre)))
+        return (
+          <div className="card caja-summary-panel">
+            <div className="section-heading">
+              <div>
+                <strong>{titulos[panelResumen]}{esDinero ? ` · ${dinero(totalesPeriodo[panelResumen])}` : ''}</strong>
+                <span>{filas.length} alumno(s) · haz clic en uno para abrir su desglose a la derecha.</span>
+              </div>
+              <button className="btn btn-outline btn-small" onClick={() => setPanelResumen(null)}>Cerrar</button>
             </div>
-            <button className="btn btn-outline btn-small" onClick={() => setPanelResumen(null)}>Cerrar</button>
+            <div className="caja-summary-list">
+              {filas.length === 0 && <p className="page-muted">Sin alumnos en este concepto para el periodo.</p>}
+              {filas.map((a) => (
+                <button key={a.id} className="caja-summary-row" onClick={() => seleccionar(a)}>
+                  <span><strong>{a.nombre}</strong><small>{descripcionAlumno(a)}</small></span>
+                  <span>{esDinero ? <strong>{dinero(a.fin[panelResumen])}</strong> : panelResumen === 'comedor' ? `🍽️ ${a.cafeteria.length}` : `🏫 ${a.estancia.length}`}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="caja-summary-list">
-            {actividad.filter(a => panelResumen === 'comedor' ? a.cafeteria.length : a.estancia.length).sort((a, b) => a.nombre.localeCompare(b.nombre)).map(a => (
-              <button key={a.id} className="caja-summary-row" onClick={() => seleccionar(a)}>
-                <span><strong>{a.nombre}</strong><small>{descripcionAlumno(a)}</small></span>
-                <span>{panelResumen === 'comedor' ? `🍽️ ${a.cafeteria.length}` : `🏫 ${a.estancia.length}`}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       <div className="caja-workspace">
         <section>
@@ -430,11 +492,9 @@ export default function Caja() {
                   <tbody>
                     {filtrados.map(a => {
                       const selected = a.id === seleccionadoId
-                      const tc = a.cafeteria.reduce((sum, c) => sum + costoConsumoLocal(c, configComedor), 0)
-                      const te = a.estancia.reduce((sum, e) => sum + (Number(e.costo) || 0), 0)
                       return <tr key={a.id} onClick={() => seleccionar(a)} className={selected ? 'selected' : ''}>
                         <td><strong>{selected ? '▶ ' : ''}{a.nombre}</strong><small>{a.matricula}</small></td>
-                        {verTodosPlanteles && <td>{a.plantel}</td>}<td>{gradoGrupo(a)}</td><td>🍽️ {a.cafeteria.length}</td><td>🏫 {a.estancia.length}</td><td><strong>{dinero(tc + te)}</strong></td>
+                        {verTodosPlanteles && <td>{a.plantel}</td>}<td>{gradoGrupo(a)}</td><td>🍽️ {a.cafeteria.length}</td><td>🏫 {a.estancia.length}</td><td><strong>{dinero(a.fin.esperado)}</strong></td>
                       </tr>
                     })}
                   </tbody>
