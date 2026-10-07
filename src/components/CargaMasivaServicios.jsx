@@ -5,6 +5,7 @@ import {
   registrarEstanciaRetroactiva,
 } from '../lib/cargaRetroactiva'
 import { useAuth } from '../contexts/AuthContext'
+import { registrarLog } from '../lib/log'
 import { tienePermiso } from '../lib/permisos'
 
 function fechaLocalInput(date = new Date()) {
@@ -142,6 +143,7 @@ export default function CargaMasivaServicios({ tipo = 'comedor' }) {
         )
       }
 
+      registrarLog({ user, accion: `carga_masiva.${tipo}`, modulo: tipo === 'estancia' ? 'estancia' : 'comedor', entidad: tipo === 'estancia' ? 'estancias' : 'consumos', detalle: { alumnos: seleccionados.map((a) => a.matricula || a.id), cantidad: seleccionados.length } })
       setSeleccionados([])
       setTexto('')
     } catch (e) {
