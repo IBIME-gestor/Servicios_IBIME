@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { PERMISO_ADMIN, tienePermiso } from '../lib/permisos'
+import { PLANTEL_TODOS } from '../lib/alumnos'
 import RelojCDMX from './RelojCDMX'
 
 const NAV_ITEMS = [
@@ -18,6 +19,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate()
   const visibles = NAV_ITEMS.filter((item) => tienePermiso(user, item.permiso))
   const esAdmin = user?.permisos?.includes(PERMISO_ADMIN)
+  const etiquetaPlantel = esAdmin || user?.plantel === PLANTEL_TODOS ? 'Todos los planteles' : user?.plantel || 'Sin plantel asignado'
 
   return (
     <div className="app-shell">
@@ -45,7 +47,7 @@ export default function Layout({ children }) {
           <RelojCDMX />
           <div className="ibime-user">
             <span className="ibime-user-name">{user?.nombre}</span>
-            <span className="ibime-role">{esAdmin ? 'Administrador' : 'Colaborador'}</span>
+            <span className="ibime-role">{esAdmin ? 'Administrador' : 'Colaborador'} · {etiquetaPlantel}</span>
           </div>
         </header>
         <main className="app-main">{children}</main>
