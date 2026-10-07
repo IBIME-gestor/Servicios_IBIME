@@ -26,7 +26,7 @@ const CORREOS_ADMIN = (import.meta.env.VITE_ADMIN_EMAILS || '')
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null) // { uid, email, nombre, permisos: string[] }
+  const [user, setUser] = useState(null) // { uid, email, nombre, permisos: string[], plantel: string }
   const [loading, setLoading] = useState(true)
   const [errorDominio, setErrorDominio] = useState('')
 
@@ -66,7 +66,7 @@ export function AuthProvider({ children }) {
             activo: true,
             creado: serverTimestamp(),
           })
-          setUser({ uid: fbUser.uid, email: fbUser.email, nombre: fbUser.displayName || fbUser.email, permisos: permisosIniciales })
+          setUser({ uid: fbUser.uid, email: fbUser.email, nombre: fbUser.displayName || fbUser.email, permisos: permisosIniciales, plantel: '' })
         } else {
           const perfil = perfilSnap.data()
           if (perfil.activo === false) {
@@ -81,11 +81,12 @@ export function AuthProvider({ children }) {
             email: fbUser.email,
             nombre: perfil.nombre || fbUser.displayName || fbUser.email,
             permisos: perfil.permisos || PERMISOS_COLABORADOR,
+            plantel: perfil.plantel || '',
           })
         }
       } catch (err) {
         console.error('Error leyendo/creando perfil de usuario:', err)
-        setUser({ uid: fbUser.uid, email: fbUser.email, nombre: fbUser.email, permisos: [] })
+        setUser({ uid: fbUser.uid, email: fbUser.email, nombre: fbUser.email, permisos: [], plantel: '' })
       } finally {
         setLoading(false)
       }
