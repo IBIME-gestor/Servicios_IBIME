@@ -1,12 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
-  const { loginConGoogle, errorDominio, setErrorDominio } = useAuth()
+  const { user, loginConGoogle, errorDominio, setErrorDominio } = useAuth()
   const navigate = useNavigate()
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
+
+  // Cuando el perfil ya cargó, entra solo (no hace falta volver a dar clic).
+  useEffect(() => {
+    if (user) navigate('/', { replace: true })
+  }, [user, navigate])
 
   async function entrarConGoogle() {
     setError('')
@@ -14,7 +19,6 @@ export default function Login() {
     setCargando(true)
     try {
       await loginConGoogle()
-      navigate('/')
     } catch (err) {
       if (err.code !== 'auth/popup-closed-by-user') {
         setError('No se pudo iniciar sesión. Intenta de nuevo.')
