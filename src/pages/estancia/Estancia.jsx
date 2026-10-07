@@ -22,6 +22,7 @@ import { formatoFecha, formatoHora } from '../../lib/fechas'
 import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, obtenerConfigEstancia } from '../../lib/pricing'
 import FirmaPad from '../../components/FirmaPad'
 import CorteEstancia from './CorteEstancia'
+import { registrarLog } from '../../lib/log'
 
 const dineroLocal = (n) => `$${Number(n || 0).toFixed(2)}`
 
@@ -86,7 +87,8 @@ export default function Estancia() {
     setRegistrando(true)
     setError('')
     try {
-      await iniciarEstancia({ alumno, registradoPor: user.uid })
+      const estanciaId = await iniciarEstancia({ alumno, registradoPor: user.uid })
+      registrarLog({ user, accion: 'estancia.entrada', modulo: 'estancia', entidad: 'estancias', entidadId: estanciaId, alumno })
       setTexto('')
       await cargarRegistros()
     } catch (err) {
@@ -115,6 +117,11 @@ export default function Estancia() {
         retiradoPor: nombreRetira.trim(),
         firmaBlob,
       })
+      registrarLog({
+        user, accion: 'estancia.salida', modulo: 'estancia', entidad: 'estancias', entidadId: retirando.id,
+        alumno: { id: retirando.alumnoId, nombre: retirando.alumnoNombre, nivel: retirando.alumnoNivel },
+        detalle: { minutos: res.minutos, costo: res.costo, retiradoPor: nombreRetira.trim(), conFirma: Boolean(firmaBlob) },
+      })
       setResultado({ ...res, estanciaId: retirando.id, pagado: false })
       await cargarRegistros()
     } catch (err) {
@@ -135,6 +142,11 @@ export default function Estancia() {
     setError('')
     try {
       await marcarEstanciaPagada({ estanciaId, usuario: user?.email || user?.uid || 'usuario', metodoPago, ajusteAcuerdo: ajuste })
+      registrarLog({
+        user, accion: ajuste ? 'estancia.ajuste_acuerdo' : 'estancia.pago', modulo: 'estancia', entidad: 'estancias', entidadId: estanciaId,
+        alumno: { id: pagando?.alumnoId, nombre: pagando?.alumnoNombre },
+        detalle: { metodoPago: ajuste ? 'ajuste_acuerdo' : metodoPago, importe: ajuste ? 0 : Number(pagando?.costo || 0), importeOriginal: Number(pagando?.costo || 0) },
+      })
       const marca = ajuste
         ? { pagado: true, cargado: true, metodoPago: 'ajuste_acuerdo', ajusteAcuerdo: true, costo: 0 }
         : { pagado: true, cargado: true, metodoPago }
@@ -326,7 +338,7 @@ export default function Estancia() {
                       {resultado.ajusteAcuerdo ? '✓ Ajuste acuerdo registrado ($0.00)' : `✓ Pago registrado${resultado.metodoPago ? ` en ${METODOS_PAGO_ESTANCIA[resultado.metodoPago]?.etiqueta}` : ''} y enviado a Caja`}
                     </span>
                   ) : (
-                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => abrirPago({ id: resultado.estanciaId, alumnoNombre: retirando.alumnoNombre, costo: resultado.costo })}>
+                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => abrirPago({ id: resultado.estanciaId, alumnoId: retirando.alumnoId, alumnoNombre: retirando.alumnoNombre, costo: resultado.costo })}>
                       💳 Pagar
                     </button>
                   )}
