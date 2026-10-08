@@ -16,6 +16,7 @@ import {
   cortarTiempoEstancia,
   completarSalidaEstancia,
   estanciasRetiroPendiente,
+  reintentarFirmasPendientes,
   marcarEstanciaPendiente,
   estanciasPendientesAlumno,
   pagarEstancias,
@@ -225,6 +226,12 @@ export default function Estancia() {
         setAvisoCorreo({ tipo: 'warn', texto: `📧 No se pudo enviar el correo automático: ${err?.message || err}` })
       })
   }
+
+  // Al abrir Estancia, sube a Drive las firmas que se quedaron pendientes (sin bloquear nada).
+  useEffect(() => {
+    const t = setTimeout(() => { reintentarFirmasPendientes().catch(() => {}) }, 4000)
+    return () => clearTimeout(t)
+  }, [])
 
   useEffect(() => {
     if (!avisoCorreo) return undefined
