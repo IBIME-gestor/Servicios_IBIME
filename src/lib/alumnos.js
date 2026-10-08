@@ -95,7 +95,20 @@ export function filtrarAlumnos(alumnos, texto) {
 /* ------------------------------------------------------------------ */
 
 export const TAM_PAGINA = 25
-const CATALOGO_VACIO = { planteles: [], niveles: [], grados: [], grupos: [] }
+const CATALOGO_VACIO = { planteles: [], niveles: [], grados: [], grupos: [], combinaciones: [] }
+
+/** Une listas de combinaciones { plantel, nivel, grado } sin repetir (estructura plantel › nivel › grado). */
+function unirCombinaciones(...listas) {
+  const mapa = new Map()
+  listas.flat().forEach((c) => {
+    if (!c?.plantel) return
+    const x = { plantel: String(c.plantel).trim(), nivel: String(c.nivel || '').trim(), grado: String(c.grado || '').trim() }
+    mapa.set(`${x.plantel}|${x.nivel}|${x.grado}`, x)
+  })
+  return Array.from(mapa.values()).sort((a, b) =>
+    a.plantel.localeCompare(b.plantel, 'es') || a.nivel.localeCompare(b.nivel, 'es') || a.grado.localeCompare(b.grado, 'es', { numeric: true })
+  )
+}
 const ordenar = (lista) => Array.from(new Set(lista.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true }))
 
 /** Valores disponibles para los filtros (1 sola lectura). null si aún no existe. */
@@ -108,7 +121,8 @@ export async function obtenerCatalogoAlumnos() {
 export async function guardarCatalogoAlumnos(nuevos) {
   const actual = (await obtenerCatalogoAlumnos()) || CATALOGO_VACIO
   const unido = {}
-  Object.keys(CATALOGO_VACIO).forEach((k) => { unido[k] = ordenar([...(actual[k] || []), ...(nuevos[k] || [])]) })
+  Object.keys(CATALOGO_VACIO).filter((k) => k !== 'combinaciones').forEach((k) => { unido[k] = ordenar([...(actual[k] || []), ...(nuevos[k] || [])]) })
+  unido.combinaciones = unirCombinaciones(actual.combinaciones || [], nuevos.combinaciones || [])
   await setDoc(doc(db, 'config', 'catalogo_alumnos'), unido, { merge: true })
   return unido
 }
@@ -117,7 +131,7 @@ export async function guardarCatalogoAlumnos(nuevos) {
 export async function reconstruirCatalogoAlumnos() {
   const lista = await listarAlumnosActivos()
   const t = (k) => lista.map((a) => String(a[k] ?? '').trim())
-  const nuevo = { planteles: ordenar(t('plantel')), niveles: ordenar(t('nivel')), grados: ordenar(t('grado')), grupos: ordenar(t('grupo')) }
+  const nuevo = { planteles: ordenar(t('plantel')), niveles: ordenar(t('nivel')), grados: ordenar(t('grado')), grupos: ordenar(t('grupo')), combinaciones: unirCombinaciones(lista.map((a) => ({ plantel: a.plantel, nivel: a.nivel, grado: a.grado }))) }
   await setDoc(doc(db, 'config', 'catalogo_alumnos'), nuevo)
   return nuevo
 }
