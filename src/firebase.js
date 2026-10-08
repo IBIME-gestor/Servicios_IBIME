@@ -1,6 +1,3 @@
-// Configuración de Firebase.
-// Los valores vienen de variables de entorno (ver .env.example) para que
-// NUNCA subas tus llaves reales directo al repositorio de GitHub.
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore'
@@ -23,6 +20,9 @@ export const auth = getAuth(app)
 // sincroniza solo, sin que nadie tenga que hacer nada.
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+  // En redes con proxy/firewall (típico de escuelas) el canal en tiempo real de
+  // Firestore falla con errores 400; con esto cambia solo a un método compatible.
+  experimentalAutoDetectLongPolling: true,
 })
 
 // Nota deliberada: NO usamos getStorage() de Firebase en ningún lado del
