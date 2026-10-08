@@ -70,7 +70,7 @@ const texto = (fila, columna) => (columna ? String(fila[columna] ?? '').trim() :
 export async function importarAlumnos(rows, mapeo) {
   const batchSize = 400 // límite de Firestore: 500 por batch
   let importados = 0
-  const catalogo = { planteles: [], niveles: [], grados: [], grupos: [] }
+  const catalogo = { planteles: [], niveles: [], grados: [], grupos: [], combinaciones: [] }
 
   for (let i = 0; i < rows.length; i += batchSize) {
     const lote = rows.slice(i, i + batchSize)
@@ -103,6 +103,7 @@ export async function importarAlumnos(rows, mapeo) {
       catalogo.niveles.push(texto(fila, mapeo.nivel))
       catalogo.grados.push(texto(fila, mapeo.grado))
       catalogo.grupos.push(texto(fila, mapeo.grupo))
+      catalogo.combinaciones.push({ plantel: texto(fila, mapeo.plantel), nivel: texto(fila, mapeo.nivel), grado: texto(fila, mapeo.grado) })
       enLote++
       importados++
     })
