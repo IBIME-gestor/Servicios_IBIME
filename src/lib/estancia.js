@@ -22,7 +22,8 @@ import { registrarLog } from './log'
 /** Métodos de pago que se cobran directo en Estancia (fuera de Caja) y entran al corte. */
 export const METODOS_PAGO_ESTANCIA = {
   efectivo: { clave: 'efectivo', etiqueta: 'Efectivo', icono: '💵' },
-  cometa: { clave: 'cometa', etiqueta: 'Cometa', icono: '💳' },
+  tarjeta_debito: { clave: 'tarjeta_debito', etiqueta: 'Tarjeta débito', icono: '💳' },
+  tarjeta_credito: { clave: 'tarjeta_credito', etiqueta: 'Tarjeta crédito', icono: '💳' },
 }
 
 /** Registra la llegada de un alumno a estancia (abre el registro). */
@@ -34,7 +35,8 @@ export async function iniciarEstancia({ alumno, registradoPor, horaEntrada = nul
     alumnoNombre: alumno.nombre,
     alumnoGrupo: alumno.grupo || '',
     alumnoNivel: alumno.nivel || '',
-    horaInicioConteo: horaInicioPorNivel(alumno.nivel, config),
+    alumnoPlantel: alumno.plantel || '',
+    horaInicioConteo: horaInicioPorNivel(alumno.nivel, config, alumno.plantel),
     horaEntrada: horaEntrada ? Timestamp.fromDate(horaEntrada) : serverTimestamp(),
     horaSalida: null,
     minutos: null,
@@ -117,6 +119,21 @@ export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob, ho
 }
 
 /** Estancias de un alumno en la semana actual (para su ficha en Caja). */
+export async function estanciasPendientesAlumno(alumnoId) {
+  const q = query(
+    collection(db, 'estancias'),
+    where('alumnoId', '==', alumnoId),
+    where('pagado', '==', false)
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+    horaEntrada: aFecha(d.data().horaEntrada),
+    horaSalida: aFecha(d.data().horaSalida),
+  })).filter((e) => e.horaSalida && !e.ajusteAcuerdo).sort((a,b) => (a.horaEntrada?.getTime()||0) - (b.horaEntrada?.getTime()||0))
+}
+
 export async function estanciasSemanaAlumno(alumnoId) {
   const { inicio, fin } = rangoSemanaActual()
   const q = query(
@@ -160,7 +177,7 @@ export async function estanciasSemanaTodas() {
  * costoOriginal), no se pide método de pago y NO entra a acciones de Caja
  * ni al corte: solo queda en el historial.
  */
-export async function marcarEstanciaPagada({ estanciaId, usuario, metodoPago = null, ajusteAcuerdo = false }) {
+export async function marcarEstanciaPagada({ estanciaId, usuario, metodoPago = null, datosPago = null, ajusteAcuerdo = false }) {
   const ref = doc(db, 'estancias', estanciaId)
   const snap = await getDoc(ref)
   if (!snap.exists()) throw new Error('La estancia ya no existe.')
@@ -180,14 +197,14 @@ export async function marcarEstanciaPagada({ estanciaId, usuario, metodoPago = n
     await updateDoc(ref, cambios)
     return { ...data, ...cambios }
   }
-  await updateDoc(ref, { ...base, ...(metodoPago ? { metodoPago } : {}) })
-  return { ...data, pagado: true, metodoPago }
+  await updateDoc(ref, { ...base, ...(metodoPago ? { metodoPago } : {}), ...(datosPago ? { datosPago } : {}) })
+  return { ...data, pagado: true, metodoPago, datosPago }
 }
 
 const aFecha = (v) => (v?.toDate ? v.toDate() : v || null)
 
 /**
- * Estancias pagadas en efectivo o Cometa que todavía no se incluyen en un corte.
+ * Estancias pagadas en efectivo o tarjeta que todavía no se incluyen en un corte.
  * Los "Ajuste acuerdo" (importe $0, sin método de pago) nunca entran.
  */
 export async function estanciasPendientesDeCorte() {
@@ -214,7 +231,8 @@ export async function crearCorteEstancia({ estancias, usuarioEmail, usuarioNombr
   const monto = (e) => Number(e.costo) || 0
   const suma = (lista) => lista.reduce((t, e) => t + monto(e), 0)
   const efectivo = estancias.filter((e) => e.metodoPago === 'efectivo')
-  const cometa = estancias.filter((e) => e.metodoPago === 'cometa')
+  const debito = estancias.filter((e) => e.metodoPago === 'tarjeta_debito')
+  const credito = estancias.filter((e) => e.metodoPago === 'tarjeta_credito')
 
   const corteRef = await addDoc(collection(db, 'cortes_estancia'), {
     creadoEn: serverTimestamp(),
@@ -224,20 +242,22 @@ export async function crearCorteEstancia({ estancias, usuarioEmail, usuarioNombr
     cantidad: estancias.length,
     total: suma(estancias),
     totalEfectivo: suma(efectivo),
-    totalCometa: suma(cometa),
+    totalTarjetaDebito: suma(debito),
+    totalTarjetaCredito: suma(credito),
     detalle: estancias.map((e) => ({
       id: e.id,
       alumno: e.alumnoNombre || '',
       metodoPago: e.metodoPago,
       costo: monto(e),
       fechaPagado: e.fechaPagado ? new Date(e.fechaPagado).toISOString() : null,
+      datosPago: e.datosPago || null,
     })),
   })
 
   registrarLog({
     user: { email: usuarioEmail, nombre: usuarioNombre },
     accion: 'estancia.corte', modulo: 'estancia', entidad: 'cortes_estancia', entidadId: corteRef.id,
-    detalle: { plantel: plantel || '', cantidad: estancias.length, total: suma(estancias), efectivo: suma(efectivo), cometa: suma(cometa) },
+    detalle: { plantel: plantel || '', cantidad: estancias.length, total: suma(estancias), efectivo: suma(efectivo), tarjetaDebito: suma(debito), tarjetaCredito: suma(credito) },
   })
 
   // Firestore permite 500 escrituras por lote.
