@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { rangoSemanaActual } from './fechas'
-import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, horaInicioPorNivel, obtenerConfigEstancia } from './pricing'
+import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, horaInicioConfigurada, nivelAplicaEstancia, obtenerConfigEstancia } from './pricing'
 import { subirArchivoADrive } from './googleDrive'
 import { registrarLog } from './log'
 
@@ -65,13 +65,21 @@ export function validarTarjeta(t) {
 export async function iniciarEstancia({ alumno, registradoPor, horaEntrada = null, retroactivo = false }) {
   // Según el plantel y nivel del alumno se define desde qué hora corre su estancia.
   const config = await obtenerConfigEstancia()
+  if (!nivelAplicaEstancia(alumno.nivel, config)) {
+    throw new Error(`${alumno.nivel || 'Este nivel'} no tiene servicio de estancia; ${alumno.nombre || 'el alumno'} no participa.`)
+  }
+  const horaInicioConteo = horaInicioConfigurada({ plantel: alumno.plantel, nivel: alumno.nivel, grado: alumno.grado }, config)
+  if (!horaInicioConteo) {
+    throw new Error(`Falta configurar el horario de inicio de estancia para ${[alumno.plantel, alumno.nivel, alumno.grado].filter(Boolean).join(' › ')} (Admin › Configuración de estancia).`)
+  }
   const ref = await addDoc(collection(db, 'estancias'), {
     alumnoId: alumno.id,
     alumnoNombre: alumno.nombre,
     alumnoGrupo: alumno.grupo || '',
     alumnoNivel: alumno.nivel || '',
+    alumnoGrado: alumno.grado || '',
     alumnoPlantel: alumno.plantel || '',
-    horaInicioConteo: horaInicioPorNivel(alumno.nivel, config, alumno.plantel),
+    horaInicioConteo,
     horaEntrada: horaEntrada ? Timestamp.fromDate(horaEntrada) : serverTimestamp(),
     horaSalida: null,
     minutos: null,
