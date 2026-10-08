@@ -11,14 +11,14 @@ const NAV_ITEMS = [
   { to: '/alumnos', label: 'Alumnos', icon: '👥', permiso: 'alumnos.ver' },
   { to: '/caja', label: 'Caja', icon: '▣', permiso: 'caja.ver' },
   { to: '/cafeteria', label: 'Cafetería', icon: '🍽', permiso: 'cafeteria.ver' },
-  { to: '/estancia', label: 'Estancia', icon: '◷', permiso: 'estancia.ver' },
+  { to: '/estancia', label: 'Estancia', icon: '◷', permisos: ['estancia.ver', 'estancia.dashboard'] },
   { to: '/admin', label: 'Administración', icon: '⚙', permiso: 'admin.usuarios' },
 ]
 
 const SERVICIOS = [
   { to: '/caja', label: 'Caja', icon: '💳', desc: 'Cargos, pagos y mensualidades', permiso: 'caja.ver' },
   { to: '/cafeteria', label: 'Cafetería', icon: '🍽️', desc: 'Desayuno y comida del día', permiso: 'cafeteria.ver' },
-  { to: '/estancia', label: 'Estancia', icon: '🏫', desc: 'Entradas, salidas y corte', permiso: 'estancia.ver' },
+  { to: '/estancia', label: 'Estancia', icon: '🏫', desc: 'Entradas, salidas y dashboard', permisos: ['estancia.ver', 'estancia.dashboard'] },
 ]
 
 const PREF = 'ibime-menu'
@@ -48,7 +48,7 @@ export default function Layout({ children }) {
 
   // ---------- Menú lateral (el de siempre) ----------
   if (modo === 'side') {
-    const visibles = NAV_ITEMS.filter((item) => tienePermiso(user, item.permiso))
+    const visibles = NAV_ITEMS.filter((item) => item.permisos ? item.permisos.some((p) => tienePermiso(user, p)) : tienePermiso(user, item.permiso))
     return (
       <div className="app-shell">
         <aside className="app-sidebar ibime-sidebar">
@@ -85,7 +85,7 @@ export default function Layout({ children }) {
   }
 
   // ---------- Menú superior con cajones ----------
-  const servicios = SERVICIOS.filter((s) => tienePermiso(user, s.permiso))
+  const servicios = SERVICIOS.filter((s) => s.permisos ? s.permisos.some((p) => tienePermiso(user, p)) : tienePermiso(user, s.permiso))
   const adminItems = ADMIN_SECCIONES.filter((s) => tienePermiso(user, s.permiso))
   const verAlumnos = tienePermiso(user, 'alumnos.ver')
   const tabActual = new URLSearchParams(window.location.search).get('tab')
