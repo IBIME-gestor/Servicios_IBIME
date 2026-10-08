@@ -130,7 +130,7 @@ export const CATALOGO_PERMISOS = [
       },
       {
         clave: 'admin.notificaciones',
-        etiqueta: 'Gestionar notificaciones semanales',
+        etiqueta: 'Gestionar notificaciones (semanal, ticket de pago y saldo pendiente)',
         descripcion:
           'Cargar plantilla HTML y preparar envíos de resumen a padres/tutores.',
       },
