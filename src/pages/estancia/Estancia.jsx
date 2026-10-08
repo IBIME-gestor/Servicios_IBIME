@@ -12,10 +12,16 @@ import {
   iniciarEstancia,
   estanciasActivas,
   estanciasDelDia,
-  estanciasPendientesAlumno,
   finalizarEstancia,
-  marcarEstanciaPagada,
-  METODOS_PAGO_ESTANCIA,
+  cortarTiempoEstancia,
+  completarSalidaEstancia,
+  estanciasRetiroPendiente,
+  marcarEstanciaPendiente,
+  estanciasPendientesAlumno,
+  pagarEstancias,
+  validarTarjeta,
+  describirPago,
+  TIPOS_TARJETA,
 } from '../../lib/estancia'
 import { tienePermiso } from '../../lib/permisos'
 import CargaMasivaServicios from '../../components/CargaMasivaServicios'
@@ -39,16 +45,18 @@ export default function Estancia() {
   const { user } = useAuth()
   const [alumnosTodos, setAlumnosTodos] = useState([])
   const [vista, setVista] = useState('operacion') // 'operacion' | 'corte'
-  const [pagando, setPagando] = useState(null)
-  const [pendientesPago, setPendientesPago] = useState([])
-  const [metodoPago, setMetodoPago] = useState('efectivo')
-  const [tipoTarjeta, setTipoTarjeta] = useState('debito')
-  const [banco, setBanco] = useState('')
-  const [ultimos4, setUltimos4] = useState('')
-  const [titularTarjeta, setTitularTarjeta] = useState('')
-  const [mismoQueRecoge, setMismoQueRecoge] = useState(true)
+  const [pagando, setPagando] = useState(null) // estancia a la que se le elige método de pago
   const [guardandoPago, setGuardandoPago] = useState('')
   const [ajusteAcuerdo, setAjusteAcuerdo] = useState(false)
+  const [pendientesPrevios, setPendientesPrevios] = useState([]) // conceptos "Pendiente" de días anteriores del mismo alumno
+  const [cargandoPrevios, setCargandoPrevios] = useState(false)
+  const [seleccion, setSeleccion] = useState({}) // id → ¿se paga ahora?
+  const [metodoTarjeta, setMetodoTarjeta] = useState(false) // se pulsó "Tarjeta"
+  const [tarjeta, setTarjeta] = useState({ tipo: '', banco: '', ultimos4: '', titular: '' })
+  const [titularIgual, setTitularIgual] = useState(false)
+  const [errorPago, setErrorPago] = useState('')
+  const [retirosPendientes, setRetirosPendientes] = useState([])
+  const [cortando, setCortando] = useState('')
   const [texto, setTexto] = useState('')
   const [activos, setActivos] = useState([])
   const [registrosHoy, setRegistrosHoy] = useState([])
@@ -65,9 +73,10 @@ export default function Estancia() {
   const firmaRef = useRef(null)
 
   async function cargarRegistros() {
-    const [abiertos, hoy] = await Promise.all([estanciasActivas(), estanciasDelDia()])
+    const [abiertos, hoy, sinCompletar] = await Promise.all([estanciasActivas(), estanciasDelDia(), estanciasRetiroPendiente()])
     setActivos(abiertos)
     setRegistrosHoy(hoy)
+    setRetirosPendientes(sinCompletar)
   }
 
   useEffect(() => {
@@ -85,6 +94,18 @@ export default function Estancia() {
   const delPlantel = (lista) => (verTodos ? lista : lista.filter((e) => mapaAlumnos.has(e.alumnoId)))
   const activosVisibles = delPlantel(activos)
   const registrosVisibles = delPlantel(registrosHoy)
+  // Alumnos a los que ya se les cortó el tiempo pero falta firma y/o pago (se muestran en amarillo con alerta).
+  const porCobrar = useMemo(() => {
+    const mapa = new Map()
+    retirosPendientes.forEach((e) => mapa.set(e.id, e))
+    registrosHoy
+      .filter((e) => e.horaSalida && !e.pagado && !e.pendiente)
+      .forEach((e) => mapa.set(e.id, { ...mapa.get(e.id), ...e }))
+    return Array.from(mapa.values())
+      .filter((e) => !e.pagado && e.horaSalida)
+      .sort((a, b) => (a.horaSalida?.getTime() || 0) - (b.horaSalida?.getTime() || 0))
+  }, [retirosPendientes, registrosHoy])
+  const porCobrarVisibles = delPlantel(porCobrar)
   const infoAlumno = (e) => descripcionAlumno(mapaAlumnos.get(e.alumnoId), { matricula: false }) || e.alumnoGrupo || ''
   const puedeCorte = tienePermiso(user, 'estancia.corte')
 
@@ -114,19 +135,40 @@ export default function Estancia() {
     setResultado(null)
   }
 
+  async function cortarTiempo(estancia) {
+    if (cortando) return
+    const ok = window.confirm(`¿Cortar el tiempo de ${estancia.alumnoNombre} ahora (${formatoHora(new Date())})?\n\nSe calculará el costo con esta hora y quedará en amarillo para completar la firma y el pago después.`)
+    if (!ok) return
+    setCortando(estancia.id)
+    setError('')
+    try {
+      const res = await cortarTiempoEstancia({ estanciaId: estancia.id, usuario: user?.email || user?.uid || 'usuario' })
+      registrarLog({
+        user, accion: 'estancia.corte_tiempo', modulo: 'estancia', entidad: 'estancias', entidadId: estancia.id,
+        alumno: { id: estancia.alumnoId, nombre: estancia.alumnoNombre, nivel: estancia.alumnoNivel },
+        detalle: { minutos: res.minutos, costo: res.costo },
+      })
+      await cargarRegistros()
+    } catch (err) {
+      console.error(err)
+      setError(err?.message || 'No fue posible cortar el tiempo.')
+    } finally {
+      setCortando('')
+    }
+  }
+
   async function confirmarRetiro() {
     if (!nombreRetira.trim() || !retirando) return
     setCargando(true)
     setError('')
     try {
       const firmaBlob = firmaLista ? await firmaRef.current.getBlob() : null
-      const res = await finalizarEstancia({
-        estanciaId: retirando.id,
-        retiradoPor: nombreRetira.trim(),
-        firmaBlob,
-      })
+      // Si ya se había cortado el tiempo, solo se completan nombre y firma (no se recalcula nada).
+      const res = retirando.horaSalida
+        ? await completarSalidaEstancia({ estanciaId: retirando.id, retiradoPor: nombreRetira.trim(), firmaBlob })
+        : await finalizarEstancia({ estanciaId: retirando.id, retiradoPor: nombreRetira.trim(), firmaBlob })
       registrarLog({
-        user, accion: 'estancia.salida', modulo: 'estancia', entidad: 'estancias', entidadId: retirando.id,
+        user, accion: retirando.horaSalida ? 'estancia.salida_completada' : 'estancia.salida', modulo: 'estancia', entidad: 'estancias', entidadId: retirando.id,
         alumno: { id: retirando.alumnoId, nombre: retirando.alumnoNombre, nivel: retirando.alumnoNivel },
         detalle: { minutos: res.minutos, costo: res.costo, retiradoPor: nombreRetira.trim(), conFirma: Boolean(firmaBlob) },
       })
@@ -140,46 +182,109 @@ export default function Estancia() {
     }
   }
 
-  async function abrirPago(estancia) {
+  function abrirPago(estancia) {
     setAjusteAcuerdo(false)
-    setMetodoPago('efectivo')
-    setTipoTarjeta('debito')
-    setBanco('')
-    setUltimos4('')
-    setMismoQueRecoge(true)
-    setTitularTarjeta(estancia.retiradoPor || '')
-    try {
-      const pendientes = await estanciasPendientesAlumno(estancia.alumnoId)
-      const mapa = new Map(pendientes.map(x => [x.id, x]))
-      mapa.set(estancia.id, estancia)
-      setPendientesPago(Array.from(mapa.values()).filter(x => !x.pagado).sort((a,b) => (a.horaEntrada?.getTime()||0) - (b.horaEntrada?.getTime()||0)).map(x => ({...x, _seleccionado: true})))
-    } catch (err) {
-      console.error(err)
-      setPendientesPago([{...estancia, _seleccionado: true}])
-    }
+    setMetodoTarjeta(false)
+    setTarjeta({ tipo: '', banco: '', ultimos4: '', titular: '' })
+    setTitularIgual(false)
+    setErrorPago('')
+    setPendientesPrevios([])
+    setSeleccion({ [estancia.id]: true })
     setPagando(estancia)
+    // Si el alumno dejó conceptos "Pendiente" antes, se ofrecen junto al consumo actual.
+    setCargandoPrevios(true)
+    estanciasPendientesAlumno(estancia.alumnoId)
+      .then((lista) => {
+        const previos = lista.filter((x) => x.id !== estancia.id)
+        setPendientesPrevios(previos)
+        setSeleccion(Object.fromEntries([estancia, ...previos].map((x) => [x.id, true])))
+      })
+      .catch((err) => {
+        console.error(err)
+        setErrorPago('No se pudieron consultar los pendientes anteriores del alumno.')
+      })
+      .finally(() => setCargandoPrevios(false))
   }
 
-  async function pagarEstancia(estanciasSeleccionadas, ajuste = false) {
-    const lista = Array.isArray(estanciasSeleccionadas) ? estanciasSeleccionadas : [estanciasSeleccionadas]
-    const metodo = metodoPago === 'efectivo' ? 'efectivo' : `tarjeta_${tipoTarjeta}`
-    const datosPago = metodo === 'efectivo' ? null : { tipoTarjeta, banco: banco.trim(), ultimos4: ultimos4.trim(), titular: (mismoQueRecoge ? (pagando?.retiradoPor || titularTarjeta) : titularTarjeta).trim(), titularEsRecoje: mismoQueRecoge }
-    if (!ajuste && metodo !== 'efectivo' && (!datosPago.banco || !/^\d{4}$/.test(datosPago.ultimos4) || !datosPago.titular)) { setError('Completa banco, últimos 4 dígitos y titular de la tarjeta.'); return }
-    setGuardandoPago('multiple')
+  function cerrarPago() {
+    if (guardandoPago) return
+    setPagando(null)
+  }
+
+  // Conceptos que se pueden pagar en este cobro: el actual + pendientes anteriores.
+  const conceptosPago = pagando ? [pagando, ...pendientesPrevios] : []
+  const conceptosElegidos = conceptosPago.filter((c) => seleccion[c.id])
+  const totalElegido = conceptosElegidos.reduce((t, c) => t + (Number(c.costo) || 0), 0)
+  const quienRecoge = (pagando?.retiradoPor || '').trim()
+
+  function elegirTitularIgual(marcado) {
+    setTitularIgual(marcado)
+    setTarjeta((t) => ({ ...t, titular: marcado ? quienRecoge : '' }))
+  }
+
+  async function ejecutarPago({ metodoPago = null, ajuste = false }) {
+    if (!pagando || guardandoPago) return
+    if (conceptosElegidos.length === 0) { setErrorPago('Selecciona al menos un concepto para pagar.'); return }
+    if (!ajuste && metodoPago === 'tarjeta') {
+      const err = validarTarjeta(tarjeta)
+      if (err) { setErrorPago(err); return }
+    }
+    setGuardandoPago(pagando.id)
+    setErrorPago('')
     setError('')
     try {
-      for (const estancia of lista) {
-        await marcarEstanciaPagada({ estanciaId: estancia.id, usuario: user?.email || user?.uid || 'usuario', metodoPago: ajuste ? null : metodo, datosPago: ajuste ? null : datosPago, ajusteAcuerdo: ajuste })
-        registrarLog({ user, accion: ajuste ? 'estancia.ajuste_acuerdo' : 'estancia.pago', modulo: 'estancia', entidad: 'estancias', entidadId: estancia.id, alumno: { id: estancia.alumnoId, nombre: estancia.alumnoNombre }, detalle: { metodoPago: ajuste ? 'ajuste_acuerdo' : metodo, importe: ajuste ? 0 : Number(estancia.costo || 0), importeOriginal: Number(estancia.costo || 0) } })
-      }
-      const marca = ajuste ? { pagado: true, cargado: true, metodoPago: 'ajuste_acuerdo', ajusteAcuerdo: true, costo: 0 } : { pagado: true, cargado: true, metodoPago: metodo, datosPago }
-      setRegistrosHoy((listaHoy) => listaHoy.map((e) => lista.some(x => x.id === e.id) ? { ...e, ...marca } : e))
-      setResultado((actual) => actual && lista.some(x => x.id === actual.estanciaId) ? { ...actual, ...marca } : actual)
+      const datosTarjeta = metodoPago === 'tarjeta' ? { ...tarjeta, titularEsQuienRecoge: titularIgual } : null
+      const res = await pagarEstancias({
+        estanciaIds: conceptosElegidos.map((c) => c.id),
+        usuario: user?.email || user?.uid || 'usuario',
+        metodoPago, tarjeta: datosTarjeta, ajusteAcuerdo: ajuste,
+      })
+      registrarLog({
+        user, accion: ajuste ? 'estancia.ajuste_acuerdo' : 'estancia.pago', modulo: 'estancia', entidad: 'estancias', entidadId: pagando.id,
+        alumno: { id: pagando.alumnoId, nombre: pagando.alumnoNombre },
+        detalle: {
+          metodoPago: ajuste ? 'ajuste_acuerdo' : metodoPago,
+          tarjeta: datosTarjeta ? { tipo: datosTarjeta.tipo, banco: datosTarjeta.banco, ultimos4: datosTarjeta.ultimos4, titular: datosTarjeta.titular } : null,
+          conceptos: res.pagados.map((p) => p.id),
+          importe: ajuste ? 0 : res.pagados.reduce((t, p) => t + p.costo, 0),
+          importeOriginal: res.pagados.reduce((t, p) => t + p.costoOriginal, 0),
+        },
+      })
+      setResultado((actual) => {
+        if (!actual || !res.pagados.some((p) => p.id === actual.estanciaId)) return actual
+        const marca = ajuste
+          ? { pagado: true, pendiente: false, metodoPago: 'ajuste_acuerdo', ajusteAcuerdo: true }
+          : { pagado: true, pendiente: false, metodoPago, tarjeta: datosTarjeta }
+        return { ...actual, ...marca }
+      })
       setPagando(null)
       await cargarRegistros()
     } catch (err) {
       console.error(err)
-      setError(err?.message || 'No fue posible registrar el pago.')
+      setErrorPago(err?.message || 'No fue posible registrar el pago.')
+    } finally {
+      setGuardandoPago('')
+    }
+  }
+
+  async function dejarPendiente() {
+    if (!pagando || guardandoPago) return
+    const ok = window.confirm(`¿Dejar ${dineroLocal(pagando.costo)} de ${pagando.alumnoNombre} como PENDIENTE?\n\nQuedará abierto y aparecerá la próxima vez que el alumno vaya a pagar.`)
+    if (!ok) return
+    setGuardandoPago(pagando.id)
+    setErrorPago('')
+    try {
+      await marcarEstanciaPendiente({ estanciaId: pagando.id, usuario: user?.email || user?.uid || 'usuario' })
+      registrarLog({
+        user, accion: 'estancia.pendiente', modulo: 'estancia', entidad: 'estancias', entidadId: pagando.id,
+        alumno: { id: pagando.alumnoId, nombre: pagando.alumnoNombre }, detalle: { importe: Number(pagando.costo || 0) },
+      })
+      setResultado((actual) => (actual?.estanciaId === pagando.id ? { ...actual, pendiente: true } : actual))
+      setPagando(null)
+      await cargarRegistros()
+    } catch (err) {
+      console.error(err)
+      setErrorPago(err?.message || 'No fue posible dejar el concepto como pendiente.')
     } finally {
       setGuardandoPago('')
     }
@@ -197,6 +302,7 @@ export default function Estancia() {
         <div className="estancia-counts">
           <span><strong>{activosVisibles.length}</strong> dentro</span>
           <span><strong>{cerradasHoy.length}</strong> salidas hoy</span>
+          {porCobrarVisibles.length > 0 && <span style={{ color: '#92400e' }}><strong>{porCobrarVisibles.length}</strong> por cobrar</span>}
         </div>
       </div>
 
@@ -286,9 +392,42 @@ export default function Estancia() {
                         </span>
                       })()}
                     </div>
-                    <button className="btn btn-primary" onClick={() => abrirRetiro(e)}>Dar salida</button>
+                    <div className="estancia-item-actions">
+                      <button className="btn btn-outline" disabled={cortando === e.id} title="Detiene el tiempo ahora; la firma y el pago se completan después" onClick={() => cortarTiempo(e)}>
+                        {cortando === e.id ? '…' : '⏱ Cortar tiempo'}
+                      </button>
+                      <button className="btn btn-primary" onClick={() => abrirRetiro(e)}>Dar salida</button>
+                    </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {porCobrarVisibles.length > 0 && (
+              <div className="estancia-porcobrar">
+                <div className="estancia-porcobrar-title">⚠️ Estancia terminada · pendiente de cobro ({porCobrarVisibles.length})</div>
+                <div className="estancia-active-list">
+                  {porCobrarVisibles.map((e) => (
+                    <div key={e.id} className="estancia-active-item estancia-alert-item">
+                      <div className="estancia-alert-icon" aria-label="Pendiente de cobro">!</div>
+                      <div className="estancia-item-main">
+                        <strong>{e.alumnoNombre}</strong>
+                        {infoAlumno(e) && <span>{infoAlumno(e)}</span>}
+                        <span>{formatoHora(e.horaEntrada)} → {formatoHora(e.horaSalida)} · {minutosTexto(e.minutos)} · <strong>{dineroLocal(e.costo)}</strong></span>
+                        <span className="estancia-alert-text">
+                          {e.retiroPendiente ? 'Tiempo detenido. Falta firma de retiro y pago.' : 'La estancia terminó. Falta el pago.'}
+                        </span>
+                      </div>
+                      <div className="estancia-item-actions">
+                        {e.retiroPendiente ? (
+                          <button className="btn btn-primary" onClick={() => abrirRetiro(e)}>Completar y cobrar</button>
+                        ) : (
+                          <button className="btn btn-primary" onClick={() => abrirPago(e)}>Pagar</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -306,13 +445,13 @@ export default function Estancia() {
             <div className="estancia-daily-list">
               {registrosVisibles.map((e) => (
                 <div key={e.id} className="estancia-daily-item">
-                  <div className={`estancia-daily-badge ${e.horaSalida ? (e.pagado ? 'closed' : 'pending') : 'open'}`}>{e.horaSalida ? (e.pagado ? '✓' : '!') : '→'}</div>
+                  <div className={`estancia-daily-badge ${e.horaSalida ? (!e.pagado && !e.pendiente ? 'alert' : 'closed') : 'open'}`}>{e.horaSalida ? (!e.pagado && !e.pendiente ? '!' : '✓') : '→'}</div>
                   <div className="estancia-daily-info">
                     <strong>{e.alumnoNombre}</strong>
                     {infoAlumno(e) && <span>{infoAlumno(e)}</span>}
                     <span>Entrada {e.horaEntrada ? formatoHora(e.horaEntrada) : '—'}</span>
                     {e.horaSalida ? (
-                      <span>Salida {formatoHora(e.horaSalida)} · <strong>{minutosTexto(e.minutos)}</strong></span>{!e.pagado && <span style={{color:'#a16207',fontWeight:800}}>⚠️ Estancia terminada · pago pendiente</span>}
+                      <span>Salida {formatoHora(e.horaSalida)} · <strong>{minutosTexto(e.minutos)}</strong></span>
                     ) : (
                       <span className="text-success">En estancia</span>
                     )}
@@ -323,12 +462,17 @@ export default function Estancia() {
                         <strong>${Number(e.costo || 0).toFixed(2)}</strong>
                         {e.pagado ? (
                           <span className="status-pill status-paid">
-                            {e.ajusteAcuerdo ? '✓ Ajuste acuerdo' : `✓ Pagado${e.metodoPago && METODOS_PAGO_ESTANCIA[e.metodoPago] ? ` · ${METODOS_PAGO_ESTANCIA[e.metodoPago].etiqueta}` : ''}`}
+                            {e.ajusteAcuerdo ? '✓ Ajuste acuerdo' : `✓ Pagado${describirPago(e) ? ` · ${describirPago(e)}` : ''}`}
                           </span>
+                        ) : e.retiroPendiente ? (
+                          <button className="btn btn-primary btn-small" onClick={() => abrirRetiro(e)}>Completar</button>
                         ) : (
-                          <button className="btn btn-primary btn-small" disabled={guardandoPago === e.id} onClick={() => abrirPago(e)}>
-                            {guardandoPago === e.id ? '…' : 'Pagar'}
-                          </button>
+                          <>
+                            {e.pendiente && <span className="status-pill status-pending">⏳ Pendiente</span>}
+                            <button className="btn btn-primary btn-small" disabled={guardandoPago === e.id} onClick={() => abrirPago(e)}>
+                              {guardandoPago === e.id ? '…' : e.pendiente ? 'Cobrar' : 'Pagar'}
+                            </button>
+                          </>
                         )}
                       </>
                     ) : <span>—</span>}
@@ -346,7 +490,7 @@ export default function Estancia() {
         <div className="estancia-drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !cargando) setRetirando(null) }}>
           <div className="card estancia-drawer" role="dialog" aria-modal="true">
             <div className="drawer-header">
-              <div><h2 style={{ margin: 0 }}>Dar salida</h2><span>{retirando.alumnoNombre}</span></div>
+              <div><h2 style={{ margin: 0 }}>{retirando.horaSalida ? 'Completar salida' : 'Dar salida'}</h2><span>{retirando.alumnoNombre}</span></div>
               {!cargando && <button className="btn btn-outline btn-small" onClick={() => setRetirando(null)}>Cerrar</button>}
             </div>
 
@@ -355,14 +499,16 @@ export default function Estancia() {
                 <div className="result-number">{minutosTexto(resultado.minutos)}</div>
                 <div className="result-label">Tiempo total en estancia</div>
                 <div className="result-cost">${Number(resultado.costo || 0).toFixed(2)} MXN</div>
-                <p className="page-muted">{resultado.desglose}</p>{!resultado.pagado && <div style={{padding:'0.65rem',borderRadius:8,background:'#fef3c7',color:'#92400e',fontWeight:800,marginBottom:'0.8rem'}}>⚠️ Salida registrada. El tiempo ya quedó cerrado; falta completar el pago.</div>}
+                <p className="page-muted">{resultado.desglose}</p>
                 <div className="drawer-actions" style={{ justifyContent: 'center' }}>
                   {resultado.pagado ? (
                     <span className="status-pill status-paid">
-                      {resultado.ajusteAcuerdo ? '✓ Ajuste acuerdo registrado ($0.00)' : `✓ Pago registrado${resultado.metodoPago ? ` en ${METODOS_PAGO_ESTANCIA[resultado.metodoPago]?.etiqueta}` : ''} y enviado a Caja`}
+                      {resultado.ajusteAcuerdo ? '✓ Ajuste acuerdo registrado ($0.00)' : `✓ Pago registrado${describirPago(resultado) ? ` en ${describirPago(resultado)}` : ''} y enviado a Caja`}
                     </span>
+                  ) : resultado.pendiente ? (
+                    <span className="status-pill status-pending">⏳ Quedó como pendiente de pago</span>
                   ) : (
-                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => abrirPago({ id: resultado.estanciaId, alumnoId: retirando.alumnoId, alumnoNombre: retirando.alumnoNombre, retiradoPor: retirando.nombreRetira || nombreRetira, costo: resultado.costo })}>
+                    <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => abrirPago({ id: resultado.estanciaId, alumnoId: retirando.alumnoId, alumnoNombre: retirando.alumnoNombre, costo: resultado.costo, retiradoPor: nombreRetira.trim() })}>
                       💳 Pagar
                     </button>
                   )}
@@ -374,13 +520,19 @@ export default function Estancia() {
                 <div className="drawer-summary">
                   <span>Entrada</span><strong>{formatoHora(retirando.horaEntrada)}</strong>
                 </div>
+                {retirando.horaSalida && (
+                  <div className="drawer-summary" style={{ background: '#fef3c7' }}>
+                    <span>Tiempo cortado a las {formatoHora(retirando.horaSalida)}</span>
+                    <strong>{minutosTexto(retirando.minutos)} · {dineroLocal(retirando.costo)}</strong>
+                  </div>
+                )}
                 <label className="field-label">Nombre de quién retira al alumno</label>
                 <input className="input" value={nombreRetira} onChange={(e) => setNombreRetira(e.target.value)} />
                 <label className="field-label" style={{ marginTop: '1rem' }}>Firma de enterado del padre/madre/tutor</label>
                 <FirmaPad ref={firmaRef} onCambio={setFirmaLista} />
                 <div className="drawer-actions">
                   <button className="btn btn-primary" disabled={cargando || !nombreRetira.trim()} onClick={confirmarRetiro}>
-                    {cargando ? 'Guardando…' : 'Confirmar salida'}
+                    {cargando ? 'Guardando…' : retirando.horaSalida ? 'Confirmar retiro y cobrar' : 'Confirmar salida y cobro'}
                   </button>
                   <button className="btn btn-outline" disabled={cargando} onClick={() => setRetirando(null)}>Cancelar</button>
                 </div>
@@ -390,53 +542,120 @@ export default function Estancia() {
         </div>
       )}
       {pagando && (
-        <div className="estancia-drawer-backdrop pago-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !guardandoPago) setPagando(null) }}>
+        <div className="estancia-drawer-backdrop pago-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) cerrarPago() }}>
           <div className="card pago-modal" role="dialog" aria-modal="true">
             <h3 style={{ marginTop: 0 }}>¿Cómo pagó?</h3>
-            <p className="page-muted" style={{ marginTop: '-0.4rem' }}>
-              {pagando.alumnoNombre} · <strong>{dineroLocal(pagando.costo)}</strong>
-            </p>
+            <p className="page-muted" style={{ marginTop: '-0.4rem' }}>{pagando.alumnoNombre}</p>
+
+            {errorPago && <div className="form-error" style={{ padding: '0.5rem 0.7rem', marginBottom: '0.7rem', fontSize: '0.85rem' }}>⚠️ {errorPago}</div>}
+
+            {cargandoPrevios ? (
+              <p className="page-muted" style={{ fontSize: '0.85rem' }}>Revisando pendientes anteriores…</p>
+            ) : (
+              <div className="pago-conceptos">
+                {pendientesPrevios.length > 0 && (
+                  <p style={{ fontSize: '0.82rem', margin: '0 0 0.5rem' }}>
+                    ⏳ Este alumno tiene <strong>{pendientesPrevios.length}</strong> concepto(s) pendiente(s). Marca lo que se paga ahora:
+                  </p>
+                )}
+                {conceptosPago.map((c) => (
+                  <label key={c.id} className="pago-concepto">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(seleccion[c.id])}
+                      disabled={Boolean(guardandoPago) || conceptosPago.length === 1}
+                      onChange={(ev) => setSeleccion((sel) => ({ ...sel, [c.id]: ev.target.checked }))}
+                    />
+                    <span style={{ flex: 1 }}>
+                      <strong>{c.id === pagando.id ? 'Estancia de hoy' : `Pendiente del ${formatoFecha(c.horaEntrada)}`}</strong>
+                      <small style={{ display: 'block', color: 'var(--ink-muted)' }}>
+                        {c.horaEntrada ? formatoHora(c.horaEntrada) : '—'} → {c.horaSalida ? formatoHora(c.horaSalida) : '—'} · {minutosTexto(c.minutos)}
+                      </small>
+                    </span>
+                    <strong>{dineroLocal(c.costo)}</strong>
+                  </label>
+                ))}
+                <div className="pago-total">
+                  <span>{ajusteAcuerdo ? 'Total (ajuste acuerdo)' : 'Total a pagar'}</span>
+                  <strong>{dineroLocal(ajusteAcuerdo ? 0 : totalElegido)}</strong>
+                </div>
+              </div>
+            )}
+
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.2rem 0 0.9rem', fontWeight: 700 }}>
               <input type="checkbox" checked={ajusteAcuerdo} disabled={Boolean(guardandoPago)} onChange={(ev) => setAjusteAcuerdo(ev.target.checked)} />
               Ajuste acuerdo
             </label>
+
             {ajusteAcuerdo ? (
               <>
-                <p style={{ fontSize: '0.85rem' }}>Importe: <strong>{dineroLocal(0)}</strong> (antes {dineroLocal(pagando.costo)}). Queda en el historial.</p>
-                <button type="button" className="btn btn-primary" disabled={Boolean(guardandoPago)} onClick={() => pagarEstancia(pendientesPago, true)}>
+                <p style={{ fontSize: '0.85rem' }}>Importe: <strong>{dineroLocal(0)}</strong> (antes {dineroLocal(totalElegido)}). Queda en el historial; no pasa a acciones de Caja ni al corte.</p>
+                <button type="button" className="btn btn-primary" disabled={Boolean(guardandoPago) || cargandoPrevios} onClick={() => ejecutarPago({ ajuste: true })}>
                   {guardandoPago ? 'Guardando…' : 'Aceptar'}
                 </button>
               </>
             ) : (
               <>
-                <div style={{ marginBottom: '0.6rem' }}><strong>Conceptos de estancia pendientes</strong></div>
-                <div style={{ display: 'grid', gap: '0.45rem', marginBottom: '0.8rem' }}>
-                  {pendientesPago.map(e => <label key={e.id} style={{ display:'flex', justifyContent:'space-between', gap:'0.6rem', padding:'0.55rem', border:'1px solid var(--border)', borderRadius:8 }}>
-                    <span><input type="checkbox" checked={e._seleccionado !== false} onChange={() => setPendientesPago(xs => xs.map(x => x.id === e.id ? {...x, _seleccionado: x._seleccionado === false} : x))} /> {e.horaEntrada ? formatoFecha(e.horaEntrada) : 'Estancia'} · {e.horaSalida ? formatoHora(e.horaSalida) : ''}</span>
-                    <strong>{dineroLocal(e.costo)}</strong>
-                  </label>)}
+                <div className="pago-opciones pago-opciones-3">
+                  <button type="button" className="btn btn-primary pago-opcion" disabled={Boolean(guardandoPago) || cargandoPrevios} onClick={() => ejecutarPago({ metodoPago: 'efectivo' })}>
+                    <span style={{ fontSize: '1.6rem' }}>💵</span>Efectivo
+                  </button>
+                  <button type="button" className={`btn pago-opcion ${metodoTarjeta ? 'btn-primary' : 'btn-outline'}`} disabled={Boolean(guardandoPago) || cargandoPrevios} onClick={() => { setMetodoTarjeta((v) => !v); setErrorPago('') }}>
+                    <span style={{ fontSize: '1.6rem' }}>💳</span>Tarjeta
+                  </button>
+                  {!pagando.pendiente && (
+                    <button type="button" className="btn btn-outline pago-opcion pago-opcion-pendiente" disabled={Boolean(guardandoPago) || cargandoPrevios} onClick={dejarPendiente}>
+                      <span style={{ fontSize: '1.6rem' }}>⏳</span>Pendiente
+                    </button>
+                  )}
                 </div>
-                <div style={{ fontWeight: 800, marginBottom:'0.8rem' }}>Total seleccionado: {dineroLocal(pendientesPago.filter(e => e._seleccionado !== false).reduce((t,e)=>t+Number(e.costo||0),0))}</div>
-                <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
-                  <button type="button" className={`btn ${metodoPago === 'efectivo' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setMetodoPago('efectivo')}>💵 Efectivo</button>
-                  <button type="button" className={`btn ${metodoPago === 'tarjeta' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setMetodoPago('tarjeta')}>💳 Cargo a tarjeta</button>
-                </div>
-                {metodoPago === 'tarjeta' && <div style={{ marginTop:'0.75rem', display:'grid', gap:'0.5rem' }}>
-                  <div style={{display:'flex',gap:'0.5rem'}}><button type="button" className={`btn ${tipoTarjeta === 'debito' ? 'btn-primary' : 'btn-outline'}`} onClick={()=>setTipoTarjeta('debito')}>Débito</button><button type="button" className={`btn ${tipoTarjeta === 'credito' ? 'btn-primary' : 'btn-outline'}`} onClick={()=>setTipoTarjeta('credito')}>Crédito</button></div>
-                  <input className="input" placeholder="Banco" value={banco} onChange={e=>setBanco(e.target.value)} />
-                  <input className="input" inputMode="numeric" maxLength={4} placeholder="Últimos 4 dígitos" value={ultimos4} onChange={e=>setUltimos4(e.target.value.replace(/\D/g,'').slice(0,4))} />
-                  <label style={{display:'flex',gap:'0.4rem',alignItems:'center'}}><input type="checkbox" checked={mismoQueRecoge} onChange={e=>{setMismoQueRecoge(e.target.checked); if(e.target.checked) setTitularTarjeta(pagando?.retiradoPor||'')}} /> El titular es el mismo que recoge</label>
-                  <input className="input" placeholder="Titular de la tarjeta" value={titularTarjeta} disabled={mismoQueRecoge} onChange={e=>setTitularTarjeta(e.target.value)} />
-                </div>}
-                <button type="button" className="btn btn-primary" style={{marginTop:'0.8rem'}} disabled={Boolean(guardandoPago) || !pendientesPago.some(e=>e._seleccionado !== false)} onClick={() => pagarEstancia(pendientesPago.filter(e=>e._seleccionado !== false))}>
-                  {guardandoPago ? 'Guardando…' : 'Registrar pago seleccionado'}
-                </button>
+
+                {metodoTarjeta && (
+                  <div className="pago-tarjeta">
+                    <div className="pago-tipo-tarjeta">
+                      {Object.values(TIPOS_TARJETA).map((t) => (
+                        <button
+                          key={t.clave}
+                          type="button"
+                          className={`btn ${tarjeta.tipo === t.clave ? 'btn-primary' : 'btn-outline'}`}
+                          disabled={Boolean(guardandoPago)}
+                          onClick={() => setTarjeta((x) => ({ ...x, tipo: t.clave }))}
+                        >
+                          {t.etiqueta}
+                        </button>
+                      ))}
+                    </div>
+
+                    {tarjeta.tipo && (
+                      <div className="pago-tarjeta-form">
+                        <label className="field-label">Banco</label>
+                        <input className="input" value={tarjeta.banco} disabled={Boolean(guardandoPago)} placeholder="Ej. BBVA, Banorte, Santander…" onChange={(ev) => setTarjeta((x) => ({ ...x, banco: ev.target.value }))} />
+
+                        <label className="field-label" style={{ marginTop: '0.6rem' }}>Últimos 4 dígitos</label>
+                        <input className="input" inputMode="numeric" maxLength={4} value={tarjeta.ultimos4} disabled={Boolean(guardandoPago)} placeholder="0000" onChange={(ev) => setTarjeta((x) => ({ ...x, ultimos4: ev.target.value.replace(/\D/g, '').slice(0, 4) }))} />
+
+                        <label className="field-label" style={{ marginTop: '0.6rem' }}>Titular de la tarjeta</label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', marginBottom: '0.35rem', opacity: quienRecoge ? 1 : 0.55 }}>
+                          <input type="checkbox" checked={titularIgual} disabled={!quienRecoge || Boolean(guardandoPago)} onChange={(ev) => elegirTitularIgual(ev.target.checked)} />
+                          {quienRecoge ? <>Es la misma persona que recoge: <strong>{quienRecoge}</strong></> : 'Es la misma persona que recoge (aún no se captura quién recoge)'}
+                        </label>
+                        <input className="input" value={tarjeta.titular} disabled={titularIgual || Boolean(guardandoPago)} placeholder="Nombre como aparece en la tarjeta" onChange={(ev) => setTarjeta((x) => ({ ...x, titular: ev.target.value }))} />
+
+                        <button type="button" className="btn btn-primary" style={{ marginTop: '0.9rem', width: '100%', justifyContent: 'center' }} disabled={Boolean(guardandoPago) || cargandoPrevios} onClick={() => ejecutarPago({ metodoPago: 'tarjeta' })}>
+                          {guardandoPago ? 'Guardando…' : `Confirmar pago con tarjeta ${tarjeta.tipo === 'debito' ? 'de débito' : 'de crédito'} · ${dineroLocal(totalElegido)}`}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
             <p style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
-              {ajusteAcuerdo ? 'Para alumnos con acuerdo o que esperan su taller.' : 'Se refleja como pagado en Caja y queda pendiente en el corte de estancia.'}
+              {ajusteAcuerdo
+                ? 'Para alumnos con acuerdo o que esperan su taller.'
+                : 'Se refleja como pagado en Caja y queda pendiente en el corte de estancia. De la tarjeta solo se guardan banco, últimos 4 dígitos y titular. “Pendiente” deja el concepto abierto para cobrarlo después.'}
             </p>
-            <button className="btn btn-outline" disabled={Boolean(guardandoPago)} onClick={() => setPagando(null)}>Cancelar</button>
+            <button className="btn btn-outline" disabled={Boolean(guardandoPago)} onClick={cerrarPago}>Cancelar</button>
           </div>
         </div>
       )}
