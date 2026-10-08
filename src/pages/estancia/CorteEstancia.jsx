@@ -3,7 +3,9 @@ import * as XLSX from 'xlsx'
 import { useAuth } from '../../contexts/AuthContext'
 import { plantelesDe, puedeVerTodosLosPlanteles, normalizar } from '../../lib/alumnos'
 import {
-  METODOS_PAGO_ESTANCIA,
+  describirPago,
+  esPagoConTarjeta,
+  TIPOS_TARJETA,
   crearCorteEstancia,
   estanciasPendientesDeCorte,
   listarCortesEstancia,
@@ -18,7 +20,9 @@ function descargarExcel({ nombreArchivo, filas, totales }) {
     ...filas,
     {},
     { Alumno: 'TOTAL EFECTIVO', Monto: totales.efectivo },
-    { Alumno: 'TOTAL COMETA', Monto: totales.cometa },
+    { Alumno: 'TOTAL TARJETA', Monto: totales.tarjeta },
+    { Alumno: '   · Débito', Monto: totales.debito },
+    { Alumno: '   · Crédito', Monto: totales.credito },
     { Alumno: 'TOTAL', Monto: totales.total },
   ])
   const libro = XLSX.utils.book_new()
@@ -26,10 +30,14 @@ function descargarExcel({ nombreArchivo, filas, totales }) {
   XLSX.writeFile(libro, nombreArchivo)
 }
 
-function MetodoPill({ metodo }) {
-  const m = METODOS_PAGO_ESTANCIA[metodo]
-  return <span className="status-pill">{m ? `${m.icono} ${m.etiqueta}` : '—'}</span>
+function MetodoPill({ registro }) {
+  const texto = describirPago(registro)
+  const icono = registro?.metodoPago === 'efectivo' ? '💵' : '💳'
+  return <span className="status-pill">{texto ? `${icono} ${texto}` : '—'}</span>
 }
+
+const tipoDe = (x) => x?.tarjeta?.tipo || x?.tarjetaTipo
+const sumaPor = (lista, campo) => lista.reduce((t, x) => t + (Number(x[campo]) || 0), 0)
 
 function Total({ titulo, valor, detalle }) {
   return (
@@ -42,7 +50,7 @@ function Total({ titulo, valor, detalle }) {
 }
 
 /**
- * Corte de estancia: reúne lo cobrado en efectivo o cargado a Cometa que aún
+ * Corte de estancia: reúne lo cobrado en efectivo o con tarjeta que aún
  * no se ha entregado. Al hacer el corte queda registrado y esos cobros ya no
  * se vuelven a contar.
  */
@@ -93,8 +101,14 @@ export default function CorteEstancia({ alumnos }) {
 
   const suma = (lista) => lista.reduce((t, e) => t + (Number(e.costo) || 0), 0)
   const efectivo = delCorte.filter((e) => e.metodoPago === 'efectivo')
-  const cometa = delCorte.filter((e) => e.metodoPago === 'cometa')
-  const totales = { efectivo: suma(efectivo), cometa: suma(cometa), total: suma(delCorte) }
+  const tarjeta = delCorte.filter((e) => esPagoConTarjeta(e.metodoPago))
+  const totales = {
+    efectivo: suma(efectivo),
+    tarjeta: suma(tarjeta),
+    debito: suma(tarjeta.filter((e) => tipoDe(e) === 'debito')),
+    credito: suma(tarjeta.filter((e) => tipoDe(e) === 'credito')),
+    total: suma(delCorte),
+  }
 
   const etiquetaPlantel = verTodos ? plantelFiltro || 'Todos' : user?.plantel || ''
 
@@ -102,7 +116,7 @@ export default function CorteEstancia({ alumnos }) {
     if (delCorte.length === 0 || haciendoCorte) return
     const ok = window.confirm(
       `Se hará el corte de ${delCorte.length} cobro(s) por ${dinero(totales.total)} ` +
-        `(Efectivo ${dinero(totales.efectivo)} · Cometa ${dinero(totales.cometa)}).\n\n` +
+        `(Efectivo ${dinero(totales.efectivo)} · Tarjeta ${dinero(totales.tarjeta)}).\n\n` +
         'Después de esto no volverán a aparecer como pendientes. ¿Continuar?'
     )
     if (!ok) return
@@ -133,7 +147,11 @@ export default function CorteEstancia({ alumnos }) {
         Alumno: e.alumnoNombre,
         Plantel: mapaAlumnos.get(e.alumnoId)?.plantel || '',
         'Fecha de pago': e.fechaPagado ? e.fechaPagado.toLocaleString('es-MX') : '',
-        Método: METODOS_PAGO_ESTANCIA[e.metodoPago]?.etiqueta || e.metodoPago,
+        Método: e.metodoPago === 'efectivo' ? 'Efectivo' : esPagoConTarjeta(e.metodoPago) ? 'Tarjeta' : e.metodoPago,
+        'Tipo de tarjeta': TIPOS_TARJETA[tipoDe(e)]?.etiqueta || '',
+        Banco: e.tarjeta?.banco || '',
+        'Últimos 4': e.tarjeta?.ultimos4 || '',
+        Titular: e.tarjeta?.titular || '',
         Monto: Number(e.costo) || 0,
       })),
       totales,
@@ -142,18 +160,24 @@ export default function CorteEstancia({ alumnos }) {
 
   function excelCorte(c) {
     const ef = (c.detalle || []).filter((d) => d.metodoPago === 'efectivo')
-    const co = (c.detalle || []).filter((d) => d.metodoPago === 'cometa')
+    const ta = (c.detalle || []).filter((d) => esPagoConTarjeta(d.metodoPago))
     descargarExcel({
       nombreArchivo: `corte_estancia_${c.creadoEn ? c.creadoEn.toISOString().slice(0, 10) : c.id}.xlsx`,
       filas: (c.detalle || []).map((d) => ({
         Alumno: d.alumno,
         'Fecha de pago': d.fechaPagado ? new Date(d.fechaPagado).toLocaleString('es-MX') : '',
-        Método: METODOS_PAGO_ESTANCIA[d.metodoPago]?.etiqueta || d.metodoPago,
+        Método: d.metodoPago === 'efectivo' ? 'Efectivo' : esPagoConTarjeta(d.metodoPago) ? 'Tarjeta' : d.metodoPago,
+        'Tipo de tarjeta': TIPOS_TARJETA[d.tarjetaTipo]?.etiqueta || '',
+        Banco: d.banco || '',
+        'Últimos 4': d.ultimos4 || '',
+        Titular: d.titular || '',
         Monto: d.costo,
       })),
       totales: {
-        efectivo: ef.reduce((t, d) => t + d.costo, 0),
-        cometa: co.reduce((t, d) => t + d.costo, 0),
+        efectivo: sumaPor(ef, 'costo'),
+        tarjeta: sumaPor(ta, 'costo'),
+        debito: sumaPor(ta.filter((d) => d.tarjetaTipo === 'debito'), 'costo'),
+        credito: sumaPor(ta.filter((d) => d.tarjetaTipo === 'credito'), 'costo'),
         total: c.total,
       },
     })
@@ -164,7 +188,7 @@ export default function CorteEstancia({ alumnos }) {
   return (
     <div>
       <p className="page-muted" style={{ marginTop: 0 }}>
-        Aquí aparece lo cobrado en <strong>efectivo</strong> o cargado a <strong>Cometa</strong> desde Estancia y que
+        Aquí aparece lo cobrado en <strong>efectivo</strong> o con <strong>tarjeta</strong> (débito o crédito) desde Estancia y que
         aún no has entregado. Estos pagos son fuera de Caja; al hacer el corte quedan registrados como entregados.
       </p>
 
@@ -185,7 +209,7 @@ export default function CorteEstancia({ alumnos }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.8rem', marginBottom: '1rem' }}>
         <Total titulo="💵 Efectivo" valor={dinero(totales.efectivo)} detalle={`${efectivo.length} cobro(s)`} />
-        <Total titulo="💳 Cometa" valor={dinero(totales.cometa)} detalle={`${cometa.length} cobro(s)`} />
+        <Total titulo="💳 Tarjeta" valor={dinero(totales.tarjeta)} detalle={`${tarjeta.length} cobro(s) · Déb. ${dinero(totales.debito)} · Créd. ${dinero(totales.credito)}`} />
         <Total titulo="Total del corte" valor={dinero(totales.total)} detalle={`${delCorte.length} cobro(s) · ${etiquetaPlantel || 'sin plantel'}`} />
       </div>
 
@@ -224,7 +248,7 @@ export default function CorteEstancia({ alumnos }) {
                       )}
                     </td>
                     <td style={{ padding: '0.45rem 0.4rem' }}>{fechaCompleta(e.fechaPagado)}</td>
-                    <td style={{ padding: '0.45rem 0.4rem' }}><MetodoPill metodo={e.metodoPago} /></td>
+                    <td style={{ padding: '0.45rem 0.4rem' }}><MetodoPill registro={e} /></td>
                     <td style={{ padding: '0.45rem 0.4rem', textAlign: 'right' }}><strong>{dinero(e.costo)}</strong></td>
                   </tr>
                 ))}
@@ -252,7 +276,7 @@ export default function CorteEstancia({ alumnos }) {
                 </div>
                 <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
                   <div><strong>{dinero(c.total)}</strong></div>
-                  <div style={{ color: 'var(--ink-muted)' }}>💵 {dinero(c.totalEfectivo)} · 💳 {dinero(c.totalCometa)}</div>
+                  <div style={{ color: 'var(--ink-muted)' }}>💵 {dinero(c.totalEfectivo)} · 💳 {dinero(c.totalTarjeta ?? c.totalCometa)}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                   <button className="btn btn-outline btn-small" onClick={() => setAbierto(abierto === c.id ? null : c.id)}>
@@ -266,7 +290,7 @@ export default function CorteEstancia({ alumnos }) {
                   {(c.detalle || []).map((d) => (
                     <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.8rem', padding: '0.2rem 0' }}>
                       <span>{d.alumno}</span>
-                      <span><MetodoPill metodo={d.metodoPago} /> <strong>{dinero(d.costo)}</strong></span>
+                      <span><MetodoPill registro={{ metodoPago: d.metodoPago, tarjetaTipo: d.tarjetaTipo, tarjeta: { banco: d.banco, ultimos4: d.ultimos4 } }} /> <strong>{dinero(d.costo)}</strong></span>
                     </div>
                   ))}
                 </div>
