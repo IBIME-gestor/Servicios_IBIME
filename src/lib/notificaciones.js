@@ -40,7 +40,7 @@ function reemplazarPlantilla(template, alumno, detalles, totals) {
     NOMBRE_ALUMNO: alumno.nombre || '', MATRICULA: alumno.matricula || '', GRADO: alumno.grado || '', GRUPO: alumno.grupo || '', PLANTEL: alumno.plantel || '', NIVEL: alumno.nivel || '', TUTOR: alumno.tutor || '',
     CORREO_ALUMNO: alumno.correoAlumno || '', CORREO_TUTOR: alumno.correoTutor || '', CONSUMOS_CAFETERIA: consumosHtml, ESTANCIAS: estanciasHtml,
     TOTAL_COMEDOR: totals.comedor.toFixed(2), TOTAL_ESTANCIA: totals.estancia.toFixed(2), TOTAL_ESTIMADO: totals.total.toFixed(2),
-    MENSAJE_COMETA: 'Verifique en Cometa que el saldo ya esté disponible para realizar el pago.',
+    MENSAJE_COMETA: 'El pago se registra como efectivo o cargo a tarjeta.',
     SEMANA: `${detalles.semanaInicio} al ${detalles.semanaFin}`,
   }
   return template.replace(/{{\s*([A-Z0-9_]+)\s*}}/g, (_, key) => valores[key] ?? '')
