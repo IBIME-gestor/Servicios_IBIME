@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { consumosSemanaTodos, costoConsumo } from '../../lib/consumos'
-import { estanciasSemanaTodas } from '../../lib/estancia'
+import { estanciasSemanaTodas, esPagoConTarjeta } from '../../lib/estancia'
 import { obtenerConfigComedor } from '../../lib/pricingComedor'
 import { useAuth } from '../../contexts/AuthContext'
 import { listarAlumnosActivos, filtrarPorPlantel, puedeVerTodosLosPlanteles } from '../../lib/alumnos'
@@ -29,10 +29,10 @@ export default function DashboardPagos() {
     const cargCaf = cafeteria.filter(c=>c.cargado).reduce((s,c)=>s+c.costoCalculado,0)
     const cargEst = cerradas.filter(e=>e.cargado).reduce((s,e)=>s+(Number(e.costo)||0),0)
     const estEfectivo = cerradas.filter(e=>e.pagado && e.metodoPago==='efectivo').reduce((s,e)=>s+(Number(e.costo)||0),0)
-    const estCometa = cerradas.filter(e=>e.pagado && e.metodoPago==='cometa').reduce((s,e)=>s+(Number(e.costo)||0),0)
+    const estTarjeta = cerradas.filter(e=>e.pagado && esPagoConTarjeta(e.metodoPago)).reduce((s,e)=>s+(Number(e.costo)||0),0)
     setDatos({
       cafeteria:{registros:cafeteria.length,cargados:cafeteria.filter(c=>c.cargado).length,pagados:cafeteria.filter(c=>c.pagado).length,total:totalCaf,cargado:cargCaf,pagado:pagCaf},
-      estancia:{registros:cerradas.length,cargados:cerradas.filter(e=>e.cargado).length,pagados:cerradas.filter(e=>e.pagado).length,total:totalEst,cargado:cargEst,pagado:pagEst,efectivo:estEfectivo,cometa:estCometa},
+      estancia:{registros:cerradas.length,cargados:cerradas.filter(e=>e.cargado).length,pagados:cerradas.filter(e=>e.pagado).length,total:totalEst,cargado:cargEst,pagado:pagEst,efectivo:estEfectivo,tarjeta:estTarjeta},
     })
     setCargando(false)
   }
@@ -55,7 +55,7 @@ export default function DashboardPagos() {
       <Fila label="Comedor pagado" value={datos.cafeteria.pagado}/>
       <Fila label="Estancia pagada" value={datos.estancia.pagado}/>
       <Fila label="   · de estancia, en efectivo" value={datos.estancia.efectivo}/>
-      <Fila label="   · de estancia, en Cometa" value={datos.estancia.cometa}/>
+      <Fila label="   · de estancia, con tarjeta" value={datos.estancia.tarjeta}/>
       <Fila label="TOTAL COBRADO" value={datos.cafeteria.pagado+datos.estancia.pagado} fuerte/>
       <div style={{marginTop:'0.7rem',paddingTop:'0.7rem',borderTop:'1px solid var(--border)',color:'var(--ink-muted)',fontSize:'0.82rem'}}>Pendiente estimado: {dinero(pendienteCaf+pendienteEst)}</div>
     </div>
