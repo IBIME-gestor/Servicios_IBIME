@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore'
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -19,7 +19,7 @@ export const auth = getAuth(app)
 // el internet del plantel — en cuanto vuelve la conexión, Firestore
 // sincroniza solo, sin que nadie tenga que hacer nada.
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   // En redes con proxy/firewall (típico de escuelas) el canal en tiempo real de
   // Firestore falla con errores 400; con esto cambia solo a un método compatible.
   experimentalAutoDetectLongPolling: true,
