@@ -295,7 +295,7 @@ export default function Estancia() {
 
   async function dejarPendiente() {
     if (!pagando || guardandoPago) return
-    const ok = window.confirm(`¿Dejar ${dineroLocal(pagando.costo)} de ${pagando.alumnoNombre} como PENDIENTE?\n\nQuedará abierto y aparecerá la próxima vez que el alumno vaya a pagar.`)
+    const ok = window.confirm(`¿Dejar ${dineroLocal(pagando.costo)} de ${pagando.alumnoNombre} como COBRO PENDIENTE?\n\nQuedará abierto y aparecerá la próxima vez que el alumno vaya a pagar. Si junta 3 cobros pendientes sin pagar, se le enviará el aviso de saldo por correo.`)
     if (!ok) return
     setGuardandoPago(pagando.id)
     setErrorPago('')
@@ -502,7 +502,7 @@ export default function Estancia() {
                           <button className="btn btn-primary btn-small" onClick={() => abrirRetiro(e)}>Completar</button>
                         ) : (
                           <>
-                            {e.pendiente && <span className="status-pill status-pending">⏳ Pendiente</span>}
+                            {e.pendiente && <span className="status-pill status-pending">⏳ Cobro pendiente</span>}
                             <button className="btn btn-primary btn-small" disabled={guardandoPago === e.id} onClick={() => abrirPago(e)}>
                               {guardandoPago === e.id ? '…' : e.pendiente ? 'Cobrar' : 'Pagar'}
                             </button>
@@ -540,7 +540,7 @@ export default function Estancia() {
                       {resultado.ajusteAcuerdo ? '✓ Ajuste acuerdo registrado ($0.00)' : `✓ Pago registrado${describirPago(resultado) ? ` en ${describirPago(resultado)}` : ''} y enviado a Caja`}
                     </span>
                   ) : resultado.pendiente ? (
-                    <span className="status-pill status-pending">⏳ Quedó como pendiente de pago</span>
+                    <span className="status-pill status-pending">⏳ Quedó como cobro pendiente</span>
                   ) : (
                     <button className="btn btn-primary" disabled={guardandoPago === resultado.estanciaId} onClick={() => abrirPago({ id: resultado.estanciaId, alumnoId: retirando.alumnoId, alumnoNombre: retirando.alumnoNombre, costo: resultado.costo, retiradoPor: nombreRetira.trim() })}>
                       💳 Pagar
@@ -639,7 +639,7 @@ export default function Estancia() {
                   </button>
                   {!pagando.pendiente && (
                     <button type="button" className="btn btn-outline pago-opcion pago-opcion-pendiente" disabled={Boolean(guardandoPago) || cargandoPrevios} onClick={dejarPendiente}>
-                      <span style={{ fontSize: '1.6rem' }}>⏳</span>Pendiente
+                      <span style={{ fontSize: '1.6rem' }}>⏳</span>Cobro pendiente
                     </button>
                   )}
                 </div>
@@ -687,7 +687,7 @@ export default function Estancia() {
             <p style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
               {ajusteAcuerdo
                 ? 'Para alumnos con acuerdo o que esperan su taller.'
-                : 'Se refleja como pagado en Caja y queda pendiente en el corte de estancia. De la tarjeta solo se guardan banco, últimos 4 dígitos y titular. “Pendiente” deja el concepto abierto para cobrarlo después.'}
+                : 'Se refleja como pagado en Caja y queda pendiente en el corte de estancia. De la tarjeta solo se guardan banco, últimos 4 dígitos y titular. “Cobro pendiente” deja el concepto abierto para cobrarlo después.'}
             </p>
             <button className="btn btn-outline" disabled={Boolean(guardandoPago)} onClick={cerrarPago}>Cancelar</button>
           </div>
