@@ -320,10 +320,38 @@ a { color: var(--navy-500); }
 
 /* ---- Estancia: método de pago y corte ---- */
 .pago-backdrop { z-index: 60; justify-content: center; align-items: center; }
-.pago-modal { width: min(420px, calc(100% - 2rem)); padding: 1.35rem; }
+.pago-modal { width: min(460px, calc(100% - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; padding: 1.35rem; }
 .pago-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-bottom: 1rem; }
+.pago-opciones-3 { grid-template-columns: repeat(3, 1fr); gap: .55rem; }
 .pago-opcion { display: flex; flex-direction: column; align-items: center; gap: .3rem; min-height: 84px; font-size: 1rem; }
-@media (max-width: 420px) { .pago-opciones { grid-template-columns: 1fr; } }
+.pago-opciones-3 .pago-opcion { font-size: .88rem; padding-inline: .3rem; }
+@media (max-width: 420px) { .pago-opciones, .pago-opciones-3 { grid-template-columns: 1fr; } }
+
+/* Conceptos a pagar (consumo actual + pendientes anteriores) */
+.pago-conceptos { border: 1px solid var(--border); border-radius: 10px; padding: .7rem; margin-bottom: .9rem; }
+.pago-concepto { display: flex; align-items: center; gap: .6rem; padding: .45rem 0; border-top: 1px solid var(--border); font-size: .88rem; cursor: pointer; }
+.pago-concepto:first-of-type { border-top: 0; }
+.pago-total { display: flex; justify-content: space-between; align-items: center; margin-top: .5rem; padding-top: .6rem; border-top: 2px solid var(--border); font-size: 1.05rem; }
+
+/* Tarjeta: débito / crédito + formulario */
+.pago-tarjeta { border: 1px solid var(--border); border-radius: 10px; padding: .8rem; margin-bottom: 1rem; background: var(--surface-sunken); }
+.pago-tipo-tarjeta { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.pago-tarjeta-form { margin-top: .8rem; }
+
+/* Estado "Pendiente" y alerta de estancia terminada sin cobrar */
+.status-pending { background: #fef3c7; color: #92400e; margin-top: .35rem; }
+.estancia-item-actions { display: flex; gap: .45rem; flex-wrap: wrap; justify-content: flex-end; }
+.estancia-porcobrar { margin-top: 1.1rem; padding-top: .9rem; border-top: 2px dashed #f59e0b; }
+.estancia-porcobrar-title { font-weight: 800; font-size: .88rem; color: #92400e; margin-bottom: .6rem; }
+.estancia-alert-item { background: #fffbeb; border-color: #f59e0b; }
+.estancia-alert-icon { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: #f59e0b; color: #fff; font-weight: 900; font-size: .95rem; animation: alertPulse 1.8s ease-in-out infinite; }
+.estancia-alert-text { color: #92400e; font-weight: 700; }
+.estancia-daily-badge.alert { background: #fef3c7; color: #b45309; border: 1px solid #f59e0b; }
+@keyframes alertPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,.5); } 50% { box-shadow: 0 0 0 6px rgba(245,158,11,0); } }
+[data-theme="dark"] .estancia-alert-item { background: rgba(245,158,11,.12); }
+[data-theme="dark"] .estancia-porcobrar-title, [data-theme="dark"] .estancia-alert-text { color: #fbbf24; }
+[data-theme="dark"] .status-pending { background: rgba(245,158,11,.2); color: #fbbf24; }
+[data-theme="dark"] .estancia-daily-badge.alert { background: rgba(245,158,11,.2); color: #fbbf24; }
 
 
 /* ===== Menú superior con cajones ===== */
