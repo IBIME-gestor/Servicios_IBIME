@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { registrarLog } from '../../lib/log'
-import { CONFIG_ESTANCIA_DEFAULT, obtenerConfigEstancia, guardarConfigEstancia, calcularCostoEstancia } from '../../lib/pricing'
+import { CONFIG_ESTANCIA_DEFAULT, obtenerConfigEstancia, guardarConfigEstancia, calcularCostoEstancia, clavePlantel } from '../../lib/pricing'
+import { obtenerCatalogoAlumnos, listarPlanteles } from '../../lib/alumnos'
 
 const dinero = (n) => `$${Number(n || 0).toFixed(2)} MXN`
 
@@ -11,7 +12,22 @@ export default function ConfigEstanciaTab() {
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
 
+  const [planteles, setPlanteles] = useState([])
+
   useEffect(() => { obtenerConfigEstancia().then(setConfig) }, [])
+  useEffect(() => {
+    // Planteles: del catálogo de alumnos (1 lectura); si aún no existe, de la lista de alumnos.
+    obtenerCatalogoAlumnos()
+      .then((c) => (c?.planteles?.length ? c.planteles : listarPlanteles()))
+      .then(setPlanteles)
+      .catch(() => setPlanteles([]))
+  }, [])
+
+  function cambiarHorarioPlantel(plantel, nivel, valor) {
+    const clave = clavePlantel(plantel)
+    const actual = config.horariosPlantel?.[clave] || {}
+    setConfig({ ...config, horariosPlantel: { ...(config.horariosPlantel || {}), [clave]: { ...actual, nombre: plantel, [nivel]: valor } } })
+  }
 
   async function handleGuardar(e) {
     e.preventDefault()
@@ -22,13 +38,14 @@ export default function ConfigEstanciaTab() {
   const ejemplos = [30, 42, 60, 75, 90, 105, 125].map(min => ({ min, ...calcularCostoEstancia(min, config) }))
 
   return (
+    <>
     <div style={{ display: 'grid', gridTemplateColumns: '390px 1fr', gap: '1.25rem', alignItems: 'start' }}>
       <form onSubmit={handleGuardar} className="card" style={{ padding: '1.25rem' }}>
         <h3 style={{ marginTop: 0 }}>🏫 Tarifas de estancia</h3>
         <p style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>El cálculo se hace por bloques: 1-30 min, 31-60 min, y después horas completas con un bloque final de 1-30 o 31-60 min cuando corresponda.</p>
 
-        <h4 style={{ margin: '0 0 0.4rem' }}>Hora de inicio de estancia por nivel</h4>
-        <p style={{ color: 'var(--ink-muted)', fontSize: '0.78rem', marginTop: 0 }}>Al registrar la entrada se toma el nivel del alumno para saber desde qué hora cuenta su estancia.</p>
+        <h4 style={{ margin: '0 0 0.4rem' }}>Hora de inicio general por nivel</h4>
+        <p style={{ color: 'var(--ink-muted)', fontSize: '0.78rem', marginTop: 0 }}>Horario base. Cada plantel puede tener su propio horario en la sección de abajo; si no lo tiene, se usa este.</p>
         <HoraNivel label="Preescolar" value={config.horaInicioPreescolar} onChange={v => setConfig({ ...config, horaInicioPreescolar: v })} />
         <HoraNivel label="Primaria" value={config.horaInicioPrimaria} onChange={v => setConfig({ ...config, horaInicioPrimaria: v })} />
         <HoraNivel label="Secundaria" value={config.horaInicioSecundaria} onChange={v => setConfig({ ...config, horaInicioSecundaria: v })} />
@@ -58,6 +75,49 @@ export default function ConfigEstanciaTab() {
         </div>
       </div>
     </div>
+
+    <div className="card" style={{ padding: '1.25rem', marginTop: '1.25rem' }}>
+      <h3 style={{ marginTop: 0 }}>🏫 Horario de inicio por plantel y nivel</h3>
+      <p style={{ color: 'var(--ink-muted)', fontSize: '0.82rem', marginTop: 0 }}>
+        El mismo nivel puede empezar a distinta hora según el plantel. Deja una casilla vacía para usar el horario general del nivel
+        (se muestra como sugerencia). Aplica a las estancias que se registren desde ahora; las ya abiertas conservan su hora.
+      </p>
+      {planteles.length === 0 ? (
+        <p style={{ color: 'var(--ink-muted)', fontSize: '0.85rem' }}>No hay planteles registrados todavía. Se llenan al importar alumnos.</p>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', fontSize: '0.78rem', color: 'var(--ink-muted)' }}>
+                <th style={{ padding: '0.4rem' }}>Plantel</th>
+                <th style={{ padding: '0.4rem' }}>Preescolar</th>
+                <th style={{ padding: '0.4rem' }}>Primaria</th>
+                <th style={{ padding: '0.4rem' }}>Secundaria</th>
+              </tr>
+            </thead>
+            <tbody>
+              {planteles.map((pl) => {
+                const h = config.horariosPlantel?.[clavePlantel(pl)] || {}
+                return (
+                  <tr key={pl} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '0.5rem 0.4rem', fontWeight: 700 }}>{pl}</td>
+                    {[['preescolar', config.horaInicioPreescolar], ['primaria', config.horaInicioPrimaria], ['secundaria', config.horaInicioSecundaria]].map(([nivel, general]) => (
+                      <td key={nivel} style={{ padding: '0.4rem' }}>
+                        <input className="input" type="time" value={h[nivel] || ''} onChange={(e) => cambiarHorarioPlantel(pl, nivel, e.target.value)} style={{ minWidth: 120 }} />
+                        <div style={{ fontSize: '0.7rem', color: 'var(--ink-muted)', marginTop: 2 }}>{h[nivel] ? 'Propio' : `General ${general || '—'}`}</div>
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <button className="btn btn-primary" disabled={guardando} type="button" onClick={handleGuardar} style={{ marginTop: '1rem' }}>{guardando ? 'Guardando…' : 'Guardar configuración'}</button>
+      {guardado && <span style={{ color: 'var(--green-600)', fontSize: '0.85rem', marginLeft: '0.8rem' }}>Guardado ✓</span>}
+    </div>
+    </>
   )
 }
 
