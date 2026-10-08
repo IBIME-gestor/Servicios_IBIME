@@ -30,6 +30,7 @@ import { formatoFecha, formatoHora } from '../../lib/fechas'
 import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, nivelAplicaEstancia, obtenerConfigEstancia } from '../../lib/pricing'
 import FirmaPad from '../../components/FirmaPad'
 import CorteEstancia from './CorteEstancia'
+import EstanciaDashboard from './EstanciaDashboard'
 import { registrarLog } from '../../lib/log'
 import { notificarTicketPago, notificarSaldoPendiente } from '../../lib/notificacionesAuto'
 
@@ -46,7 +47,7 @@ const minutosTexto = (minutos) => {
 export default function Estancia() {
   const { user } = useAuth()
   const [alumnosTodos, setAlumnosTodos] = useState([])
-  const [vista, setVista] = useState('operacion') // 'operacion' | 'corte'
+  const [vista, setVista] = useState(() => tienePermiso(user, 'estancia.dashboard') ? 'dashboard' : 'operacion') // 'dashboard' | 'operacion' | 'corte' | 'pendientes'
   const [pagando, setPagando] = useState(null) // estancia a la que se le elige método de pago
   const [guardandoPago, setGuardandoPago] = useState('')
   const [ajusteAcuerdo, setAjusteAcuerdo] = useState(false)
@@ -356,20 +357,38 @@ export default function Estancia() {
         </div>
       )}
 
-      {puedeCorte && (
-        <div className="admin-tabs">
-          <button className={`admin-tab${vista === 'operacion' ? ' active' : ''}`} onClick={() => setVista('operacion')}>
-            Entradas y salidas
-          </button>
-          <button className={`admin-tab${vista === 'corte' ? ' active' : ''}`} onClick={() => setVista('corte')}>
-            Corte de estancia
-          </button>
+      {(tienePermiso(user, 'estancia.dashboard') || tienePermiso(user, 'estancia.ver') || puedeCorte) && (
+        <div className="admin-tabs estancia-tabs">
+          {tienePermiso(user, 'estancia.dashboard') && (
+            <button className={`admin-tab${vista === 'dashboard' ? ' active' : ''}`} onClick={() => setVista('dashboard')}>
+              📊 Dashboard
+            </button>
+          )}
+          {tienePermiso(user, 'estancia.ver') && (
+            <button className={`admin-tab${vista === 'operacion' ? ' active' : ''}`} onClick={() => setVista('operacion')}>
+              Entradas y salidas
+            </button>
+          )}
+          {puedeCorte && (
+            <button className={`admin-tab${vista === 'corte' ? ' active' : ''}`} onClick={() => setVista('corte')}>
+              Corte de estancia
+            </button>
+          )}
+          {tienePermiso(user, 'estancia.dashboard') && (
+            <button className={`admin-tab${vista === 'pendientes' ? ' active' : ''}`} onClick={() => setVista('pendientes')}>
+              🔔 Pendientes históricos
+            </button>
+          )}
         </div>
       )}
 
+      {vista === 'dashboard' && tienePermiso(user, 'estancia.dashboard') && <EstanciaDashboard />}
+
       {vista === 'corte' && puedeCorte && <CorteEstancia alumnos={alumnos} />}
 
-      {vista === 'operacion' && (<>
+      {vista === 'pendientes' && tienePermiso(user, 'estancia.dashboard') && <EstanciaDashboard soloPendientes />}
+
+      {vista === 'operacion' && tienePermiso(user, 'estancia.ver') && (<>
 
       {tienePermiso(user, 'estancia.carga_masiva') && (
         <div style={{ marginBottom: '1rem' }}>
