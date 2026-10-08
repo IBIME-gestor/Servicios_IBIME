@@ -22,7 +22,7 @@ import {
   puedeVerTodosLosPlanteles,
   sinPlantelAsignado,
 } from '../../lib/alumnos'
-import { METODOS_PAGO_ESTANCIA, listarCortesEstancia } from '../../lib/estancia'
+import { METODOS_PAGO_ESTANCIA, listarCortesEstancia, estanciasPendientesAlumno } from '../../lib/estancia'
 import { obtenerConfigComedor } from '../../lib/pricingComedor'
 import { marcarDetalleCobro } from '../../lib/cobros'
 import { listarPlanesComedor } from '../../lib/planesComedor'
@@ -168,11 +168,19 @@ export default function Caja() {
   const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false)
   const [formMensualidad, setFormMensualidad] = useState({ tipo: 'desayuno', monto: '', planCatalogoId: '' })
   const [cortesEstancia, setCortesEstancia] = useState([])
+  const [pendientesEstanciaSeleccionado, setPendientesEstanciaSeleccionado] = useState([])
   const [mostrarCortes, setMostrarCortes] = useState(false)
   const [fechaCorteDesde, setFechaCorteDesde] = useState(fechaInput(mesActual.inicio))
   const [fechaCorteHasta, setFechaCorteHasta] = useState(fechaInput(mesActual.fin))
   const [corteExpandido, setCorteExpandido] = useState(null)
   const [aplicandoAjuste, setAplicandoAjuste] = useState('')
+  const [pagoModal, setPagoModal] = useState(null)
+  const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [tipoTarjeta, setTipoTarjeta] = useState('debito')
+  const [banco, setBanco] = useState('')
+  const [ultimos4, setUltimos4] = useState('')
+  const [titularTarjeta, setTitularTarjeta] = useState('')
+  const [mismoQueRecoge, setMismoQueRecoge] = useState(true)
 
   const inicio = useMemo(() => parseInputDate(fechaDesde, false), [fechaDesde])
   const fin = useMemo(() => parseInputDate(fechaHasta, true), [fechaHasta])
@@ -208,6 +216,7 @@ export default function Caja() {
         setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
         const mes = rangoMes(new Date())
         setConsumosMesPlan(await cargarConsumosMesAlumno(seleccionadoId, mes.inicio, mes.fin))
+        setPendientesEstanciaSeleccionado(await estanciasPendientesAlumno(seleccionadoId))
       }
     } catch (err) {
       console.error(err)
@@ -288,7 +297,8 @@ export default function Caja() {
 
   const seleccionado = actividad.find((a) => a.id === seleccionadoId) || null
   const cafeteriaSeleccionada = seleccionado?.cafeteria || []
-  const estanciaSeleccionada = seleccionado?.estancia || []
+  const estanciaActualSeleccionada = seleccionado?.estancia || []
+  const estanciaSeleccionada = useMemo(() => { const ids = new Set(estanciaActualSeleccionada.map(e => e.id)); return [...estanciaActualSeleccionada, ...pendientesEstanciaSeleccionado.filter(e => !ids.has(e.id))] }, [estanciaActualSeleccionada, pendientesEstanciaSeleccionado])
 
   const planesDesayuno = planes.filter((p) => p.tipo === 'desayuno' && p.activo !== false)
   const planesComida = planes.filter((p) => p.tipo === 'comida' && p.activo !== false)
@@ -318,17 +328,17 @@ export default function Caja() {
   const totalPagado = pagadoIndividual + pagadoMensual
 
   async function cambiarEstado(coleccion, id, campo, valor) {
+    if (campo === 'pagado' && valor) {
+      const actual = coleccion === 'consumos' ? consumos.find(x => x.id === id) : coleccion === 'estancias' ? estancias.find(x => x.id === id) : planes.find(x => x.id === id)
+      abrirPagoModal([{ id, coleccion, monto: coleccion === 'consumos' ? costoConsumoLocal(actual, configComedor) : Number(actual?.montoAjustado ?? actual?.monto ?? actual?.costo ?? 0), etiqueta: coleccion === 'estancias' ? `Estancia · ${actual?.horaEntrada ? formatoFecha(actual.horaEntrada) : ''}` : coleccion === 'planes_comedor' ? (actual?.tipo === 'desayuno' ? 'Desayuno mensual' : 'Comida mensual') : (actual?.tipo === 'desayuno' ? 'Desayuno' : 'Comida'), retiradoPor: actual?.retiradoPor || seleccionado?.tutor || '' }])
+      return
+    }
     const key = `${coleccion}-${id}-${campo}`
     setGuardando(key)
+    setError('')
     try {
-      if (campo === 'pagado' && !valor) {
-        // Permitir revertir el pago solo a quien tenga permisos en las reglas.
-      }
       await marcarDetalleCobro({ coleccion, id, campo, valor, usuario: user?.email || user?.uid || 'usuario' })
-      registrarLog({
-        user, accion: `caja.${campo}_${valor ? 'marcar' : 'desmarcar'}`, modulo: 'caja', entidad: coleccion, entidadId: id,
-        alumno: seleccionado, detalle: { campo, valor: Boolean(valor) },
-      })
+      registrarLog({ user, accion: `caja.${campo}_${valor ? 'marcar' : 'desmarcar'}`, modulo: 'caja', entidad: coleccion, entidadId: id, alumno: seleccionado, detalle: { campo, valor: Boolean(valor) } })
       const aplicar = (lista) => lista.map((x) => x.id === id ? { ...x, [campo]: valor } : x)
       if (coleccion === 'consumos') setConsumos(aplicar)
       else if (coleccion === 'estancias') setEstancias(aplicar)
@@ -336,9 +346,40 @@ export default function Caja() {
     } catch (err) {
       console.error(err)
       setError(err?.message || 'No fue posible actualizar el estado de cobro.')
-    } finally {
-      setGuardando('')
+    } finally { setGuardando('') }
+  }
+
+  async function abrirPagoModal(items) {
+    let lista = items
+    const estancia = items.find(x => x.coleccion === 'estancias')
+    if (estancia && seleccionado?.id) {
+      try {
+        const pendientes = await estanciasPendientesAlumno(seleccionado.id)
+        const actuales = new Set(items.map(x => x.id))
+        lista = [...items, ...pendientes.filter(x => !actuales.has(x.id)).map(x => ({ id:x.id, coleccion:'estancias', monto:Number(x.costo||0), etiqueta:`Estancia · ${x.horaEntrada ? formatoFecha(x.horaEntrada) : ''}`, retiradoPor:x.retiradoPor || '' }))]
+      } catch (err) { console.error(err) }
     }
+    setMetodoPago('efectivo'); setTipoTarjeta('debito'); setBanco(''); setUltimos4(''); setMismoQueRecoge(true)
+    setTitularTarjeta(lista[0]?.retiradoPor || seleccionado?.tutor || '')
+    setPagoModal(lista.map(x => ({...x, seleccionado: true})))
+  }
+
+  async function confirmarPagoModal() {
+    const items = (pagoModal || []).filter(x => x.seleccionado)
+    if (!items.length) return
+    const metodo = metodoPago === 'efectivo' ? 'efectivo' : `tarjeta_${tipoTarjeta}`
+    const datosPago = metodo === 'efectivo' ? null : { tipoTarjeta, banco: banco.trim(), ultimos4: ultimos4.trim(), titular: (mismoQueRecoge ? (items[0]?.retiradoPor || titularTarjeta) : titularTarjeta).trim(), titularEsRecoje: mismoQueRecoge }
+    if (metodo !== 'efectivo' && (!datosPago.banco || !/^\d{4}$/.test(datosPago.ultimos4) || !datosPago.titular)) { setError('Completa banco, últimos 4 dígitos y titular de la tarjeta.'); return }
+    setGuardando('pago-multiple'); setError('')
+    try {
+      for (const item of items) {
+        await marcarDetalleCobro({ coleccion: item.coleccion === 'planes_comedor' ? 'planes_comedor' : item.coleccion, id:item.id, campo:'pagado', valor:true, usuario:user?.email||user?.uid||'usuario', pago:{ metodoPago:metodo, datosPago } })
+      }
+      const marcar = (lista, coleccion) => lista.map(x => items.some(i=>i.id===x.id && i.coleccion===coleccion) ? {...x, pagado:true, pagadoPor:user?.email||user?.uid||'usuario', metodoPago:metodo, datosPago} : x)
+      setConsumos(x => marcar(x,'consumos')); setEstancias(x => marcar(x,'estancias')); setPlanes(x => marcar(x,'planes_comedor')); setPlanesTodos(x => marcar(x,'planes_comedor'))
+      registrarLog({ user, accion:'caja.pago_registrar', modulo:'caja', entidad:'cobros', alumno:seleccionado, detalle:{ metodoPago:metodo, items:items.map(i=>i.id), total:items.reduce((t,i)=>t+Number(i.monto||0),0), datosPago } })
+      setPagoModal(null)
+    } catch (err) { console.error(err); setError(err?.message || 'No fue posible registrar el pago.') } finally { setGuardando('') }
   }
 
   async function aplicarDescuentoInasistencia(plan, descuento, faltantes) {
@@ -421,6 +462,7 @@ export default function Caja() {
       setPlanes(p.filter((x) => solapaRango(x, inicio, fin)))
       const consumosMes = await cargarConsumosMesAlumno(seleccionado.id, mes.inicio, mes.fin)
       setConsumosMesPlan(consumosMes)
+      setPendientesEstanciaSeleccionado(await estanciasPendientesAlumno(seleccionado.id))
       setMostrarMensualidad(false)
       setFormMensualidad({ tipo: 'desayuno', monto: '', planCatalogoId: '' })
     } catch (err) {
@@ -432,27 +474,18 @@ export default function Caja() {
   }
 
   async function cambiarEstadoMensualidad(id, campo, valor) {
+    if (campo === 'pagado' && valor) {
+      const plan = planes.find(p => p.id === id)
+      abrirPagoModal([{ id, coleccion:'planes_comedor', monto:Number(plan?.montoAjustado ?? plan?.monto ?? 0), etiqueta: plan?.tipo === 'desayuno' ? 'Desayuno mensual' : 'Comida mensual', retiradoPor: seleccionado?.tutor || '' }])
+      return
+    }
     const key = `planes_comedor-${id}-${campo}`
-    setGuardando(key)
-    setError('')
+    setGuardando(key); setError('')
     try {
-      await updateDoc(doc(db, 'planes_comedor', id), {
-        [campo]: Boolean(valor),
-        [`${campo}Por`]: user?.email || user?.uid || 'usuario',
-        [`fecha${campo[0].toUpperCase()}${campo.slice(1)}`]: serverTimestamp(),
-      })
+      await updateDoc(doc(db, 'planes_comedor', id), { [campo]: Boolean(valor), [`${campo}Por`]: user?.email || user?.uid || 'usuario', [`fecha${campo[0].toUpperCase()}${campo.slice(1)}`]: serverTimestamp() })
       setPlanes((lista) => lista.map((p) => p.id === id ? { ...p, [campo]: Boolean(valor) } : p))
       setPlanesTodos((lista) => lista.map((p) => p.id === id ? { ...p, [campo]: Boolean(valor) } : p))
-      registrarLog({
-        user, accion: `caja.mensualidad_${campo}_${valor ? 'marcar' : 'desmarcar'}`, modulo: 'caja', entidad: 'planes_comedor', entidadId: id,
-        alumno: seleccionado, detalle: { campo, valor: Boolean(valor) },
-      })
-    } catch (err) {
-      console.error(err)
-      setError(err?.message || 'No fue posible actualizar la mensualidad.')
-    } finally {
-      setGuardando('')
-    }
+    } catch (err) { console.error(err); setError(err?.message || 'No fue posible actualizar la mensualidad.') } finally { setGuardando('') }
   }
 
   if (cargando) return <p style={{ color: 'var(--ink-muted)' }}>Cargando registro de alumnos…</p>
@@ -590,7 +623,7 @@ export default function Caja() {
             <Mini titulo="Esperado" valor={dinero(totalEsperado)} />
             <Mini titulo="Cargado" valor={dinero(totalCargado)} />
             <Mini titulo="Pagado" valor={dinero(totalPagado)} />
-            <Mini titulo="Pendiente" valor={dinero(Math.max(totalEsperado - totalPagado, 0))} />
+            <Mini titulo="Pendiente" valor={dinero(Math.max(totalEsperado - totalPagado, 0))} onClick={() => setModulo(modulo === 'pendiente' ? null : 'pendiente')} activo={modulo === 'pendiente'} />
           </div>
 
           <div className="caja-monthly-section">
@@ -613,11 +646,26 @@ export default function Caja() {
           </div>
 
           {modulo === 'comedor' && <DetalleComedor rows={consumosIndividuales} config={configComedor} cambiarEstado={cambiarEstado} guardando={guardando} planesDesayuno={planesDesayuno} planesComida={planesComida} planDesayunoPagado={planDesayunoPagado} planComidaPagado={planComidaPagado} planDesayunoActivo={planDesayunoActivo} planComidaActivo={planComidaActivo} consumosTotales={cafeteriaSeleccionada}/>} 
-          {modulo === 'estancia' && <DetalleEstancia rows={estanciaSeleccionada} cambiarEstado={cambiarEstado} guardando={guardando}/>} 
+          {modulo === 'estancia' && <DetalleEstancia rows={estanciaSeleccionada} cambiarEstado={cambiarEstado} guardando={guardando}/>}
+          {modulo === 'pendiente' && <DetallePendientes rows={estanciaSeleccionada.filter(e => !e.pagado)} cambiarEstado={cambiarEstado} guardando={guardando} />} 
           </aside>
         </div>
       )}
 
+
+      {pagoModal && (
+        <div className="estancia-drawer-backdrop pago-backdrop" onMouseDown={(e)=>{if(e.target===e.currentTarget && !guardando) setPagoModal(null)}}>
+          <div className="card pago-modal" role="dialog" aria-modal="true">
+            <h3 style={{marginTop:0}}>Registrar pago</h3>
+            <p className="page-muted">Selecciona qué conceptos se liquidan en este momento.</p>
+            <div style={{display:'grid',gap:'0.45rem',marginBottom:'0.8rem'}}>{pagoModal.map((item,i)=><label key={item.id} style={{display:'flex',justifyContent:'space-between',gap:'0.5rem',padding:'0.55rem',border:'1px solid var(--border)',borderRadius:8}}><span><input type="checkbox" checked={item.seleccionado} onChange={()=>setPagoModal(xs=>xs.map((x,j)=>j===i?{...x,seleccionado:!x.seleccionado}:x))}/> {item.etiqueta}</span><strong>{dinero(item.monto)}</strong></label>)}</div>
+            <div style={{fontWeight:800,marginBottom:'0.7rem'}}>Total: {dinero(pagoModal.filter(x=>x.seleccionado).reduce((t,x)=>t+Number(x.monto||0),0))}</div>
+            <div style={{display:'flex',gap:'0.5rem',flexWrap:'wrap'}}><button type="button" className={`btn ${metodoPago==='efectivo'?'btn-primary':'btn-outline'}`} onClick={()=>setMetodoPago('efectivo')}>💵 Efectivo</button><button type="button" className={`btn ${metodoPago==='tarjeta'?'btn-primary':'btn-outline'}`} onClick={()=>setMetodoPago('tarjeta')}>💳 Cargo a tarjeta</button></div>
+            {metodoPago==='tarjeta' && <div style={{display:'grid',gap:'0.5rem',marginTop:'0.7rem'}}><div style={{display:'flex',gap:'0.5rem'}}><button type="button" className={`btn ${tipoTarjeta==='debito'?'btn-primary':'btn-outline'}`} onClick={()=>setTipoTarjeta('debito')}>Débito</button><button type="button" className={`btn ${tipoTarjeta==='credito'?'btn-primary':'btn-outline'}`} onClick={()=>setTipoTarjeta('credito')}>Crédito</button></div><input className="input" placeholder="Banco" value={banco} onChange={e=>setBanco(e.target.value)}/><input className="input" inputMode="numeric" maxLength={4} placeholder="Últimos 4 dígitos" value={ultimos4} onChange={e=>setUltimos4(e.target.value.replace(/\D/g,'').slice(0,4))}/><label style={{display:'flex',gap:'0.4rem',alignItems:'center'}}><input type="checkbox" checked={mismoQueRecoge} onChange={e=>{setMismoQueRecoge(e.target.checked);if(e.target.checked)setTitularTarjeta(pagoModal[0]?.retiradoPor||seleccionado?.tutor||'')}}/> El titular es el mismo que recoge</label><input className="input" placeholder="Titular de la tarjeta" value={titularTarjeta} disabled={mismoQueRecoge} onChange={e=>setTitularTarjeta(e.target.value)}/></div>}
+            <div style={{display:'flex',gap:'0.5rem',marginTop:'0.9rem'}}><button className="btn btn-primary" disabled={guardando==='pago-multiple'||!pagoModal.some(x=>x.seleccionado)} onClick={confirmarPagoModal}>{guardando==='pago-multiple'?'Guardando…':'Registrar pago'}</button><button className="btn btn-outline" disabled={guardando==='pago-multiple'} onClick={()=>setPagoModal(null)}>Cancelar</button></div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -628,7 +676,7 @@ function costoConsumoLocal(c, config) {
 
 function CampoFecha({ label, value, onChange }) { return <label style={{ minWidth: 155 }}><div style={{ fontSize: '0.76rem', color: 'var(--ink-muted)', marginBottom: 4 }}>{label}</div><input className="input" type="date" value={value} onChange={e => onChange(e.target.value)} /></label> }
 function Kpi({ titulo, valor, desplegable = false, activo = false, onClick }) { return <button type="button" className={`card caja-kpi ${activo ? 'active' : ''} ${desplegable ? 'clickable' : ''}`} onClick={onClick} disabled={!desplegable} aria-pressed={activo}><div className="caja-kpi-value">{valor}</div><div className="caja-kpi-label">{titulo}{desplegable ? <span>{activo ? '▲' : '▼'}</span> : null}</div></button> }
-function Mini({ titulo, valor }) { return <div style={{ padding: '0.75rem', border: '1px solid var(--border)', borderRadius: 10 }}><div style={{ fontSize: '0.72rem', color: 'var(--ink-muted)' }}>{titulo}</div><strong>{valor}</strong></div> }
+function Mini({ titulo, valor, onClick, activo }) { return <button type="button" onClick={onClick} style={{ padding: '0.75rem', border: `1px solid ${activo ? 'var(--red-600)' : 'var(--border)'}`, borderRadius: 10, textAlign:'left', background: activo ? 'var(--surface-sunken)' : 'var(--surface)', cursor:onClick?'pointer':'default' }}><div style={{ fontSize: '0.72rem', color: 'var(--ink-muted)' }}>{titulo}</div><strong>{valor}</strong></button> }
 function Modulo({ titulo, total, detalle, activo, onClick }) { return <button onClick={onClick} className="card" style={{ padding: '1rem', textAlign: 'left', cursor: 'pointer', border: `2px solid ${activo ? 'var(--red-600)' : 'var(--border)'}`, background: activo ? 'var(--surface-sunken)' : 'var(--surface)' }}><div style={{ fontWeight: 800 }}>{titulo}</div><div style={{ fontSize: '1.35rem', marginTop: '0.3rem' }}>{dinero(total)}</div><div style={{ fontSize: '0.78rem', color: 'var(--ink-muted)' }}>{detalle} · {activo ? 'ocultar detalle' : 'ver detalle'}</div></button> }
 function Check({ label, checked, disabled, onChange }) { return <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', opacity: disabled ? 0.5 : 1 }}><input type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={e => onChange(e.target.checked)} />{label}</label> }
 
@@ -685,5 +733,7 @@ function DetalleComedor({ rows, config, cambiarEstado, guardando, planesDesayuno
     })}
   </div>
 }
+
+function DetallePendientes({ rows, cambiarEstado, guardando }) { return <div style={{ marginTop:'1rem' }}><h3 style={{fontSize:'0.95rem'}}>Pendientes por liquidar</h3>{rows.length===0 ? <p style={{color:'var(--ink-muted)'}}>No hay conceptos pendientes.</p> : rows.map(e => <div key={e.id} style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'0.7rem',padding:'0.65rem 0',borderTop:'1px solid var(--border)'}}><div><strong>🏫 Estancia · {e.horaEntrada ? formatoFecha(e.horaEntrada) : '—'}</strong><div style={{fontSize:'0.76rem',color:'var(--ink-muted)'}}>{e.horaEntrada ? formatoHora(e.horaEntrada) : ''} → {e.horaSalida ? formatoHora(e.horaSalida) : ''} · {dinero(e.costo)}</div><div style={{color:'#a16207',fontSize:'0.76rem',fontWeight:800}}>⚠️ Pago pendiente</div></div><button className="btn btn-primary btn-small" onClick={()=>cambiarEstado('estancias',e.id,'pagado',true)} disabled={guardando===`estancias-${e.id}-pagado`}>Pagar</button></div>)}</div> }
 
 function DetalleEstancia({ rows, cambiarEstado, guardando }) { return <div style={{ marginTop: '1rem' }}><h3 style={{ fontSize: '0.95rem' }}>Detalle de estancia</h3>{rows.length === 0 ? <p style={{ color: 'var(--ink-muted)' }}>Sin estancias cerradas.</p> : rows.map(e => e.ajusteAcuerdo ? <div key={e.id} style={{ padding: '0.65rem 0', borderTop: '1px solid var(--border)' }}><strong>{e.horaEntrada ? formatoFecha(e.horaEntrada) : '—'}</strong><div style={{ fontSize: '0.76rem', color: 'var(--ink-muted)' }}>{e.horaEntrada ? formatoHora(e.horaEntrada) : '—'} → {e.horaSalida ? formatoHora(e.horaSalida) : '—'} · {e.minutos || 0} min · {dinero(0)}{e.costoOriginal ? ` (original ${dinero(e.costoOriginal)})` : ''}</div><div style={{ fontSize: '0.76rem', fontWeight: 700 }}>🤝 Ajuste acuerdo · solo historial, sin acciones de caja</div></div> : <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.8rem', alignItems: 'center', padding: '0.65rem 0', borderTop: '1px solid var(--border)' }}><div><strong>{e.horaEntrada ? formatoFecha(e.horaEntrada) : '—'}</strong><div style={{ fontSize: '0.76rem', color: 'var(--ink-muted)' }}>{e.horaEntrada ? formatoHora(e.horaEntrada) : '—'} → {e.horaSalida ? formatoHora(e.horaSalida) : '—'} · {e.minutos || 0} min · {dinero(e.costo)}</div></div><Check label="Cargado" checked={e.cargado} disabled={guardando === `estancias-${e.id}-cargado`} onChange={v => cambiarEstado('estancias', e.id, 'cargado', v)} /><Check label="Pagado" checked={e.pagado} disabled={!e.cargado || guardando === `estancias-${e.id}-pagado`} onChange={v => cambiarEstado('estancias', e.id, 'pagado', v)} />{e.metodoPago && METODOS_PAGO_ESTANCIA[e.metodoPago] && <div style={{ gridColumn: '1 / -1', fontSize: '0.76rem', fontWeight: 700 }}>{METODOS_PAGO_ESTANCIA[e.metodoPago].icono} Pagado en {METODOS_PAGO_ESTANCIA[e.metodoPago].etiqueta} desde Estancia{e.corteId ? ' · ya incluido en un corte' : ' · pendiente de corte'}</div>}</div>)}</div> }
