@@ -26,7 +26,7 @@ function InicioSegunPermisos() {
     return <Navigate to="/cafeteria" replace />
   }
 
-  if (tienePermiso(user, 'estancia.ver')) {
+  if (tienePermiso(user, 'estancia.ver') || tienePermiso(user, 'estancia.dashboard')) {
     return <Navigate to="/estancia" replace />
   }
 
@@ -97,7 +97,7 @@ export default function App() {
       <Route
         path="/estancia"
         element={
-          <RutaPrivada permisoRequerido="estancia.ver">
+          <RutaPrivada permisoRequerido={['estancia.ver', 'estancia.dashboard']}>
             <Layout>
               <Estancia />
             </Layout>
