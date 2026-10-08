@@ -81,11 +81,29 @@ export default function EstanciaDashboard({ soloPendientes = false }) {
     setCargando(true)
     setError('')
     try {
-      const [r, p, a] = await Promise.all([
+      // No hacemos que una consulta de estancias bloquee el contador de alumnos.
+      // Así, si Firestore tiene un índice pendiente o una consulta histórica falla,
+      // el Dashboard sigue mostrando los alumnos que sí pudo leer.
+      const resultados = await Promise.allSettled([
         estanciasEntreFechas(rango.desde, rango.hasta),
         estanciasPendientesHistoricas(),
         listarAlumnosActivos(),
       ])
+
+      const [resRegistros, resPendientes, resAlumnos] = resultados
+      const r = resRegistros.status === 'fulfilled' ? resRegistros.value : []
+      const p = resPendientes.status === 'fulfilled' ? resPendientes.value : []
+      const a = resAlumnos.status === 'fulfilled' ? resAlumnos.value : []
+
+      const fallos = resultados
+        .filter((x) => x.status === 'rejected')
+        .map((x) => x.reason?.message || String(x.reason || 'Error desconocido'))
+
+      if (fallos.length) {
+        console.warn('Dashboard de estancia: algunas consultas fallaron:', fallos)
+        setError(`Se cargó el dashboard parcialmente. ${fallos[0]}`)
+      }
+
       const alumnosVisibles = filtrarPorPlantel(a, user)
       const idsVisibles = new Set(alumnosVisibles.map((x) => x.id))
       const plantelUsuario = normalizar(user?.plantel)
