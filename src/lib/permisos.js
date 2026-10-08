@@ -49,6 +49,12 @@ export const CATALOGO_PERMISOS = [
         descripcion:
           'Ver lo cobrado en estancia por método de pago y hacer el corte para entregarlo.',
       },
+      {
+        clave: 'estancia.dashboard',
+        etiqueta: 'Dashboard y cobranza histórica de estancia',
+        descripcion:
+          'Ver indicadores por periodo, consultar pendientes históricos agrupados y registrar su pago.',
+      },
     ],
   },
 
