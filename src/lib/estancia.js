@@ -343,6 +343,44 @@ export async function marcarEstanciaPendiente({ estanciaId, usuario }) {
   await updateDoc(ref, { pendiente: true, pendienteDesde: serverTimestamp(), pendientePor: usuario || 'usuario' })
 }
 
+
+/** Estancias pendientes de cobro de todos los días (histórico), agrupables por alumno. */
+export async function estanciasPendientesHistoricas() {
+  const q = query(collection(db, 'estancias'), where('pendiente', '==', true))
+  const snap = await getDocs(q)
+  return snap.docs
+    .map((d) => ({
+      id: d.id,
+      ...d.data(),
+      horaEntrada: d.data().horaEntrada?.toDate?.() || null,
+      horaSalida: d.data().horaSalida?.toDate?.() || null,
+    }))
+    .filter((e) => e.horaSalida && !e.pagado)
+    .sort((a, b) => (a.horaEntrada?.getTime() || 0) - (b.horaEntrada?.getTime() || 0))
+}
+
+/** Registros de estancia entre dos fechas inclusivas (para el dashboard). */
+export async function estanciasEntreFechas(fechaInicio, fechaFin) {
+  const inicio = new Date(fechaInicio)
+  inicio.setHours(0, 0, 0, 0)
+  const fin = new Date(fechaFin)
+  fin.setHours(23, 59, 59, 999)
+  const q = query(
+    collection(db, 'estancias'),
+    where('horaEntrada', '>=', Timestamp.fromDate(inicio)),
+    where('horaEntrada', '<=', Timestamp.fromDate(fin)),
+    orderBy('horaEntrada', 'desc')
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+    horaEntrada: d.data().horaEntrada?.toDate?.() || null,
+    horaSalida: d.data().horaSalida?.toDate?.() || null,
+    fechaPagado: d.data().fechaPagado?.toDate?.() || null,
+  }))
+}
+
 /** Conceptos de estancia que el alumno dejó "Pendiente" en días anteriores (sin pagar). */
 export async function estanciasPendientesAlumno(alumnoId) {
   const q = query(collection(db, 'estancias'), where('alumnoId', '==', alumnoId), where('pendiente', '==', true))
