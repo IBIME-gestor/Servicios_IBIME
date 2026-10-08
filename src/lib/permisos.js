@@ -45,7 +45,7 @@ export const CATALOGO_PERMISOS = [
       },
       {
         clave: 'estancia.corte',
-        etiqueta: 'Hacer corte de estancia (efectivo / Cometa)',
+        etiqueta: 'Hacer corte de estancia (efectivo / tarjeta)',
         descripcion:
           'Ver lo cobrado en estancia por método de pago y hacer el corte para entregarlo.',
       },
