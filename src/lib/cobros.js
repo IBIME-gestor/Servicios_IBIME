@@ -42,9 +42,17 @@ export async function listarCobrosSemana() {
 }
 
 /** Marca el estado de cobro de un detalle individual de comedor o estancia. */
-export async function marcarDetalleCobro({ coleccion, id, campo, valor, usuario }) {
+export async function marcarDetalleCobro({ coleccion, id, campo, valor, usuario, pago = null }) {
   if (!['cargado', 'pagado'].includes(campo)) throw new Error('Estado de cobro no válido.')
   if (!id || !coleccion) throw new Error('Falta identificar el detalle.')
   const payload = { [campo]: Boolean(valor), [`${campo}Por`]: usuario, [`fecha${campo[0].toUpperCase()}${campo.slice(1)}`]: serverTimestamp() }
+  if (campo === 'pagado' && valor && pago) {
+    payload.metodoPago = pago.metodoPago
+    payload.datosPago = pago.datosPago || null
+  }
+  if (campo === 'pagado' && !valor) {
+    payload.metodoPago = null
+    payload.datosPago = null
+  }
   await updateDoc(doc(db, coleccion, id), payload)
 }
