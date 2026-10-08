@@ -45,12 +45,25 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
-    // Estancias: captura normal, carga masiva o carga administrativa pueden crear/actualizar
-    // (llegada y retiro); cualquiera con sesión puede leer (lo usa caja).
+    // Estancias: captura normal, carga masiva o carga administrativa pueden crear/actualizar.
+    // La lectura se limita a módulos que realmente necesitan consultar estancias.
+    // El dashboard además tiene permiso propio para consultar y cobrar pendientes históricos.
     match /estancias/{estanciaId} {
-      allow read: if estaAutenticado();
+      allow read: if tengoPermiso('estancia.ver')
+        || tengoPermiso('estancia.dashboard')
+        || tengoPermiso('estancia.corte')
+        || tengoPermiso('caja.ver')
+        || tengoPermiso('admin.pagos')
+        || tengoPermiso('admin.cargas_masivas')
+        || tengoPermiso('admin.carga_retroactiva')
+        || tengoPermiso('admin.notificaciones');
       allow create: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva');
-      allow update: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva') || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado','metodoPago']))
+      allow update: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva')
+        || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado','metodoPago']))
+        || (tengoPermiso('estancia.dashboard') && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'cargado','pagado','pendiente','pagadoPor','fechaPagado','pagoGrupoId',
+          'metodoPago','tarjeta','tarjetaTipo','ajusteAcuerdo','costoOriginal','costo'
+        ]))
         // El corte solo puede marcar la estancia como incluida en un corte.
         || (tengoPermiso('estancia.corte') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['corteId','corteEn']));
       allow delete: if esAdmin();
