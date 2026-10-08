@@ -30,6 +30,7 @@ import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, obt
 import FirmaPad from '../../components/FirmaPad'
 import CorteEstancia from './CorteEstancia'
 import { registrarLog } from '../../lib/log'
+import { notificarTicketPago, notificarSaldoPendiente } from '../../lib/notificacionesAuto'
 
 const dineroLocal = (n) => `$${Number(n || 0).toFixed(2)}`
 
@@ -57,6 +58,7 @@ export default function Estancia() {
   const [errorPago, setErrorPago] = useState('')
   const [retirosPendientes, setRetirosPendientes] = useState([])
   const [cortando, setCortando] = useState('')
+  const [avisoCorreo, setAvisoCorreo] = useState(null) // { tipo: 'ok' | 'warn', texto }
   const [texto, setTexto] = useState('')
   const [activos, setActivos] = useState([])
   const [registrosHoy, setRegistrosHoy] = useState([])
@@ -211,6 +213,25 @@ export default function Estancia() {
     setPagando(null)
   }
 
+  /** Dispara un correo automático en segundo plano y muestra el resultado sin bloquear la caja. */
+  function avisarCorreo(promesa) {
+    promesa
+      .then((r) => {
+        if (r?.estado === 'enviado') setAvisoCorreo({ tipo: 'ok', texto: `📧 ${r.mensaje}` })
+        else if (r?.estado === 'error' || r?.motivo === 'sin_correo') setAvisoCorreo({ tipo: 'warn', texto: `📧 ${r.mensaje}` })
+      })
+      .catch((err) => {
+        console.error(err)
+        setAvisoCorreo({ tipo: 'warn', texto: `📧 No se pudo enviar el correo automático: ${err?.message || err}` })
+      })
+  }
+
+  useEffect(() => {
+    if (!avisoCorreo) return undefined
+    const t = setTimeout(() => setAvisoCorreo(null), 9000)
+    return () => clearTimeout(t)
+  }, [avisoCorreo])
+
   // Conceptos que se pueden pagar en este cobro: el actual + pendientes anteriores.
   const conceptosPago = pagando ? [pagando, ...pendientesPrevios] : []
   const conceptosElegidos = conceptosPago.filter((c) => seleccion[c.id])
@@ -257,7 +278,12 @@ export default function Estancia() {
           : { pagado: true, pendiente: false, metodoPago, tarjeta: datosTarjeta }
         return { ...actual, ...marca }
       })
+      const alumnoPago = mapaAlumnos.get(pagando.alumnoId) || { id: pagando.alumnoId, nombre: pagando.alumnoNombre }
       setPagando(null)
+      // Ticket automático por correo (solo pagos con importe; el ajuste acuerdo de $0 no genera ticket).
+      if (!ajuste && res.pagados.length > 0) {
+        avisarCorreo(notificarTicketPago({ estanciaIds: res.pagados.map((p) => p.id), alumno: alumnoPago, user }))
+      }
       await cargarRegistros()
     } catch (err) {
       console.error(err)
@@ -280,7 +306,10 @@ export default function Estancia() {
         alumno: { id: pagando.alumnoId, nombre: pagando.alumnoNombre }, detalle: { importe: Number(pagando.costo || 0) },
       })
       setResultado((actual) => (actual?.estanciaId === pagando.id ? { ...actual, pendiente: true } : actual))
+      const alumnoPend = mapaAlumnos.get(pagando.alumnoId) || { id: pagando.alumnoId, nombre: pagando.alumnoNombre }
       setPagando(null)
+      // Si ya suma las estancias pendientes configuradas (3 por defecto), avisa del saldo por correo.
+      avisarCorreo(notificarSaldoPendiente({ alumno: alumnoPend, user }))
       await cargarRegistros()
     } catch (err) {
       console.error(err)
@@ -307,6 +336,11 @@ export default function Estancia() {
       </div>
 
       {error && <div className="card form-error">⚠️ {error}</div>}
+      {avisoCorreo && (
+        <div className="card" style={{ padding: '0.7rem 1rem', marginBottom: '1rem', border: `1px solid ${avisoCorreo.tipo === 'ok' ? '#16a34a' : '#f59e0b'}`, background: avisoCorreo.tipo === 'ok' ? '#f0fdf4' : '#fffbeb', color: avisoCorreo.tipo === 'ok' ? '#166534' : '#92400e', fontSize: '0.88rem' }}>
+          {avisoCorreo.texto}
+        </div>
+      )}
 
       {sinPlantelAsignado(user) && (
         <div className="card form-error">
