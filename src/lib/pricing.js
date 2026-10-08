@@ -7,7 +7,9 @@ export const CONFIG_ESTANCIA_DEFAULT = {
   horaInicioPreescolar: '14:00',
   horaInicioPrimaria: '14:00',
   horaInicioSecundaria: '14:00',
-  horariosPorPlantel: {},
+  // Horario específico por plantel y nivel. Si un plantel/nivel queda vacío se usa el horario general del nivel.
+  // Forma: { [clavePlantel]: { nombre: 'Plantel Norte', preescolar: '13:30', primaria: '14:00', secundaria: '15:00' } }
+  horariosPlantel: {},
   minutosGracia: 0,
   costo30Min: 0,
   costo31a60Min: 0, // si queda en 0 se usa la tarifa de 1 hora
@@ -30,6 +32,7 @@ export async function guardarConfigEstancia(config) {
     horaInicioPreescolar: config.horaInicioPreescolar || config.horaInicio || '14:00',
     horaInicioPrimaria: config.horaInicioPrimaria || config.horaInicio || '14:00',
     horaInicioSecundaria: config.horaInicioSecundaria || config.horaInicio || '14:00',
+    horariosPlantel: config.horariosPlantel || {},
     minutosGracia: Number(config.minutosGracia || 0),
     costo30Min: Number(config.costo30Min || 0),
     costo31a60Min: Number(config.costo31a60Min || 0),
@@ -94,14 +97,20 @@ export function claveNivelEstancia(nivel) {
   return null
 }
 
-/** Hora ("HH:MM") en que empieza a contar la estancia para un nivel. */
+/** Clave estable de un plantel para guardarlo como llave en la configuración. */
+export function clavePlantel(plantel) {
+  return normalizar(plantel).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+/**
+ * Hora ("HH:MM") en que empieza a contar la estancia.
+ * Prioridad: horario del plantel + nivel → horario general del nivel → respaldo.
+ */
 export function horaInicioPorNivel(nivel, config = CONFIG_ESTANCIA_DEFAULT, plantel = '') {
   const clave = claveNivelEstancia(nivel)
-  const plantelClave = normalizar(plantel)
-  const horariosPlantel = config.horariosPorPlantel || {}
-  const configuracionPlantel = Object.entries(horariosPlantel).find(([nombre]) => normalizar(nombre) === plantelClave)?.[1]
-  const porNivelPlantel = configuracionPlantel?.[clave]
-  if (porNivelPlantel) return porNivelPlantel
+  const claveP = clavePlantel(plantel)
+  const delPlantel = claveP && clave ? config.horariosPlantel?.[claveP]?.[clave] : ''
+  if (delPlantel) return delPlantel
   const porNivel = {
     preescolar: config.horaInicioPreescolar,
     primaria: config.horaInicioPrimaria,
@@ -113,7 +122,7 @@ export function horaInicioPorNivel(nivel, config = CONFIG_ESTANCIA_DEFAULT, plan
 /**
  * Config lista para calcular una estancia concreta. Si el registro ya guardó
  * la hora de inicio con la que se abrió (horaInicioConteo), esa manda; si no,
- * se deduce del nivel del alumno (alumnoNivel).
+ * se deduce del plantel y nivel del alumno (alumnoPlantel / alumnoNivel).
  */
 export function configParaEstancia(estancia, config = CONFIG_ESTANCIA_DEFAULT) {
   const hora = estancia?.horaInicioConteo || horaInicioPorNivel(estancia?.alumnoNivel, config, estancia?.alumnoPlantel)
