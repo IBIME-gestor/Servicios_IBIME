@@ -27,7 +27,7 @@ import {
 import { tienePermiso } from '../../lib/permisos'
 import CargaMasivaServicios from '../../components/CargaMasivaServicios'
 import { formatoFecha, formatoHora } from '../../lib/fechas'
-import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, obtenerConfigEstancia } from '../../lib/pricing'
+import { calcularCostoEstancia, calcularMinutosEstancia, configParaEstancia, nivelAplicaEstancia, obtenerConfigEstancia } from '../../lib/pricing'
 import FirmaPad from '../../components/FirmaPad'
 import CorteEstancia from './CorteEstancia'
 import { registrarLog } from '../../lib/log'
@@ -112,7 +112,8 @@ export default function Estancia() {
   const infoAlumno = (e) => descripcionAlumno(mapaAlumnos.get(e.alumnoId), { matricula: false }) || e.alumnoGrupo || ''
   const puedeCorte = tienePermiso(user, 'estancia.corte')
 
-  const sugerencias = filtrarAlumnos(alumnos, texto)
+  // Solo participan los alumnos de niveles que tienen estancia.
+  const sugerencias = filtrarAlumnos(configEstancia ? alumnos.filter((a) => nivelAplicaEstancia(a.nivel, configEstancia)) : alumnos, texto)
 
   async function registrarLlegada(alumno) {
     if (registrando) return
