@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -116,9 +117,81 @@ export async function estanciasDelDia(fecha = new Date()) {
   }))
 }
 
+/* ------------------------------------------------------------------ */
+/* Firma: se guarda al instante y se sube a Drive en segundo plano      */
+/* ------------------------------------------------------------------ */
+
+const MAX_FIRMA_DATAURL = 150_000 // ~150 KB; una firma de 480×160 pesa unos 3–10 KB
+const firmasSubiendo = new Set()
+
+const blobADataUrl = (blob) =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onloadend = () => resolve(r.result)
+    r.onerror = reject
+    r.readAsDataURL(blob)
+  })
+
+const nombreArchivoFirma = (alumnoNombre, fecha, estanciaId) =>
+  `firma_${String(alumnoNombre || 'alumno').replace(/\s+/g, '_')}_${fecha.toISOString().slice(0, 10)}_${estanciaId}.png`
+
+/**
+ * Sube a Drive la firma que quedó guardada en el registro y, si sale bien,
+ * deja solo el enlace (borra la copia local para no engordar Firestore).
+ * Nunca lanza error: si falla, la firma sigue guardada y se reintenta después.
+ */
+async function subirFirmaPendiente(estanciaId, firmaDataUrl, nombreArchivo) {
+  if (firmasSubiendo.has(estanciaId)) return false
+  firmasSubiendo.add(estanciaId)
+  try {
+    const blob = await (await fetch(firmaDataUrl)).blob()
+    const subida = await subirArchivoADrive(blob, nombreArchivo)
+    await updateDoc(doc(db, 'estancias', estanciaId), {
+      firmaUrl: subida.webViewLink,
+      firmaPendiente: false,
+      firmaDataUrl: deleteField(),
+      firmaError: deleteField(),
+    })
+    return true
+  } catch (err) {
+    console.warn('La firma quedó guardada pero aún no se pudo subir a Drive:', err?.message || err)
+    try {
+      await updateDoc(doc(db, 'estancias', estanciaId), { firmaError: String(err?.message || err).slice(0, 200) })
+    } catch { /* sin conexión: se reintenta luego */ }
+    return false
+  } finally {
+    firmasSubiendo.delete(estanciaId)
+  }
+}
+
+/** Datos de firma para guardar junto con la salida (instantáneo, sin red externa). */
+async function prepararFirma(firmaBlob, alumnoNombre, fecha, estanciaId) {
+  if (!firmaBlob) return null
+  const firmaDataUrl = await blobADataUrl(firmaBlob)
+  if (firmaDataUrl.length > MAX_FIRMA_DATAURL) throw new Error('La firma es demasiado pesada. Bórrala y vuelve a firmar.')
+  return { firmaDataUrl, firmaPendiente: true, firmaArchivo: nombreArchivoFirma(alumnoNombre, fecha, estanciaId) }
+}
+
+/**
+ * Reintenta las firmas que no alcanzaron a subirse a Drive (red caída, script
+ * mal configurado, etc.). Se llama al abrir Estancia; sube de a una.
+ */
+export async function reintentarFirmasPendientes(maximo = 5) {
+  const snap = await getDocs(query(collection(db, 'estancias'), where('firmaPendiente', '==', true), limit(maximo)))
+  let subidas = 0
+  for (const d of snap.docs) {
+    const x = d.data()
+    if (!x.firmaDataUrl) continue
+    const nombre = x.firmaArchivo || nombreArchivoFirma(x.alumnoNombre, new Date(), d.id)
+    if (await subirFirmaPendiente(d.id, x.firmaDataUrl, nombre)) subidas += 1
+  }
+  return { pendientes: snap.size, subidas }
+}
+
 /**
  * Cierra una estancia: calcula minutos y costo según la configuración
- * vigente, sube la firma a Drive (si se capturó) y guarda todo.
+ * vigente y guarda todo. La firma se guarda al instante en el registro y se
+ * sube a Drive en segundo plano, así la salida no espera a Google.
  */
 export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob, horaSalida = null, retroactivo = false }) {
   const ref = doc(db, 'estancias', estanciaId)
@@ -133,12 +206,7 @@ export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob, ho
   if (minutos < 0) throw new Error('La hora de retiro no puede ser anterior a la hora de entrada.')
   const { costo, desglose } = calcularCostoEstancia(minutos, config)
 
-  let firmaUrl = data.firmaUrl || null
-  if (firmaBlob) {
-    const nombreArchivo = `firma_${data.alumnoNombre.replace(/\s+/g, '_')}_${ahora.toISOString().slice(0, 10)}_${estanciaId}.png`
-    const subida = await subirArchivoADrive(firmaBlob, nombreArchivo)
-    firmaUrl = subida.webViewLink
-  }
+  const firma = await prepararFirma(firmaBlob, data.alumnoNombre, ahora, estanciaId)
 
   await updateDoc(ref, {
     horaSalida: horaSalida ? Timestamp.fromDate(horaSalida) : serverTimestamp(),
@@ -146,10 +214,13 @@ export async function finalizarEstancia({ estanciaId, retiradoPor, firmaBlob, ho
     costo,
     desgloseCosto: desglose,
     retiradoPor,
-    firmaUrl,
+    firmaUrl: data.firmaUrl || null,
+    ...(firma || {}),
     capturadoEn: data.capturadoEn || serverTimestamp(),
     retroactivo: Boolean(retroactivo || data.retroactivo),
   })
+
+  if (firma) subirFirmaPendiente(estanciaId, firma.firmaDataUrl, firma.firmaArchivo) // en segundo plano
 
   return { minutos, costo, desglose }
 }
@@ -232,13 +303,9 @@ export async function completarSalidaEstancia({ estanciaId, retiradoPor, firmaBl
   const data = snap.data()
   if (!data.horaSalida) throw new Error('Esta estancia sigue abierta; usa "Dar salida".')
 
-  let firmaUrl = data.firmaUrl || null
-  if (firmaBlob) {
-    const nombreArchivo = `firma_${data.alumnoNombre.replace(/\s+/g, '_')}_${data.horaSalida.toDate().toISOString().slice(0, 10)}_${estanciaId}.png`
-    const subida = await subirArchivoADrive(firmaBlob, nombreArchivo)
-    firmaUrl = subida.webViewLink
-  }
-  await updateDoc(ref, { retiradoPor, firmaUrl, retiroPendiente: false })
+  const firma = await prepararFirma(firmaBlob, data.alumnoNombre, data.horaSalida.toDate(), estanciaId)
+  await updateDoc(ref, { retiradoPor, firmaUrl: data.firmaUrl || null, ...(firma || {}), retiroPendiente: false })
+  if (firma) subirFirmaPendiente(estanciaId, firma.firmaDataUrl, firma.firmaArchivo) // en segundo plano
   return { minutos: data.minutos, costo: data.costo, desglose: data.desgloseCosto || '' }
 }
 
