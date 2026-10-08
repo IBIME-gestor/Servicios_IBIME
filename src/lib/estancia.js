@@ -361,9 +361,16 @@ export async function estanciasPendientesHistoricas() {
 
 /** Registros de estancia entre dos fechas inclusivas (para el dashboard). */
 export async function estanciasEntreFechas(fechaInicio, fechaFin) {
-  const inicio = new Date(fechaInicio)
+  // OJO: new Date('2026-10-08') se interpreta en UTC (medianoche UTC), que en
+  // CDMX es el día ANTERIOR a las 18:00. Por eso el rango se arma en hora local.
+  const aLocal = (f) => {
+    if (f instanceof Date) return new Date(f)
+    const [y, m, d] = String(f).split('-').map(Number)
+    return new Date(y, (m || 1) - 1, d || 1)
+  }
+  const inicio = aLocal(fechaInicio)
   inicio.setHours(0, 0, 0, 0)
-  const fin = new Date(fechaFin)
+  const fin = aLocal(fechaFin)
   fin.setHours(23, 59, 59, 999)
   const q = query(
     collection(db, 'estancias'),
