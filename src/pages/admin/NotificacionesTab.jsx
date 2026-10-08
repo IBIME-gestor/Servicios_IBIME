@@ -1,8 +1,29 @@
 import { useEffect, useState } from 'react'
 import { obtenerPlantillaNotificacion, guardarPlantillaNotificacion, prepararNotificacionesSemana } from '../../lib/notificaciones'
 import { useAuth } from '../../contexts/AuthContext'
+import NotificacionesAutoTab from './NotificacionesAutoTab'
+
+const SECCIONES = [
+  { id: 'semanal', label: '📅 Resumen semanal' },
+  { id: 'ticket', label: '🧾 Ticket de pago (automático)' },
+  { id: 'saldo', label: '⏳ Saldo pendiente (automático)' },
+]
 
 export default function NotificacionesTab() {
+  const [seccion, setSeccion] = useState('semanal')
+  return (
+    <div>
+      <div className="admin-tabs" style={{ marginBottom: '1rem' }}>
+        {SECCIONES.map((s) => (
+          <button key={s.id} className={`admin-tab${seccion === s.id ? ' active' : ''}`} onClick={() => setSeccion(s.id)}>{s.label}</button>
+        ))}
+      </div>
+      {seccion === 'semanal' ? <ResumenSemanalTab /> : <NotificacionesAutoTab key={seccion} tipo={seccion} />}
+    </div>
+  )
+}
+
+function ResumenSemanalTab() {
   const { user } = useAuth()
   const [plantilla,setPlantilla]=useState('')
   const [asunto,setAsunto]=useState('Resumen semanal de servicios IBIME')
@@ -42,7 +63,7 @@ export default function NotificacionesTab() {
       <input type="file" accept=".html,text/html" onChange={cargarArchivo}/>
       {archivo && <div style={{fontSize:'0.8rem',color:'var(--ink-muted)',marginTop:'0.4rem'}}>{archivo}</div>}
       <label style={{display:'block',fontSize:'0.82rem',marginTop:'1rem'}}>Asunto<input className="input" value={asunto} onChange={e=>setAsunto(e.target.value)}/></label>
-      <label style={{display:'block',fontSize:'0.82rem',marginTop:'0.8rem'}}>HTML<input className="input" value={plantilla} onChange={e=>setPlantilla(e.target.value)} style={{minHeight:180,fontFamily:'monospace'}}/></label>
+      <label style={{display:'block',fontSize:'0.82rem',marginTop:'0.8rem'}}>HTML<textarea className="input" value={plantilla} onChange={e=>setPlantilla(e.target.value)} style={{minHeight:180,fontFamily:'monospace'}}/></label>
       <p style={{fontSize:'0.78rem',color:'var(--ink-muted)'}}>Variables disponibles: <code>{'{{NOMBRE_ALUMNO}}'}</code>, <code>{'{{MATRICULA}}'}</code>, <code>{'{{GRADO}}'}</code>, <code>{'{{GRUPO}}'}</code>, <code>{'{{CONSUMOS_CAFETERIA}}'}</code>, <code>{'{{ESTANCIAS}}'}</code>, <code>{'{{TOTAL_COMEDOR}}'}</code>, <code>{'{{TOTAL_ESTANCIA}}'}</code>, <code>{'{{TOTAL_ESTIMADO}}'}</code>, <code>{'{{MENSAJE_COMETA}}'}</code>, <code>{'{{SEMANA}}'}</code>.</p>
       <button className="btn btn-primary" disabled={guardando||!plantilla.trim()} onClick={guardar}>Guardar plantilla</button>
     </div>
