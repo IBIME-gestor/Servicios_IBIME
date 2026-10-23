@@ -38,10 +38,11 @@ service cloud.firestore {
 
     // Consumos de cafetería: solo quien tenga cafeteria.registrar puede
     // crear; cualquiera con sesión puede leer (lo usan caja y cafetería).
+    // Caja (caja.ver) puede marcar cargado/pagado y el método de pago.
     match /consumos/{consumoId} {
       allow read: if estaAutenticado();
       allow create: if tengoPermiso('cafeteria.registrar') || tengoPermiso('cafeteria.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva');
-      allow update: if esAdmin() || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']) && (!request.resource.data.pagado || request.resource.data.cargado));
+      allow update: if esAdmin() || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado','metodoPago','datosPago']) && (!request.resource.data.pagado || request.resource.data.cargado));
       allow delete: if esAdmin();
     }
 
@@ -59,7 +60,7 @@ service cloud.firestore {
         || tengoPermiso('admin.notificaciones');
       allow create: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva');
       allow update: if tengoPermiso('estancia.registrar') || tengoPermiso('estancia.carga_masiva') || tengoPermiso('caja.carga_masiva') || tengoPermiso('admin.carga_retroactiva')
-        || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado','metodoPago']))
+        || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado','metodoPago','datosPago']))
         || (tengoPermiso('estancia.dashboard') && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'cargado','pagado','pendiente','pagadoPor','fechaPagado','pagoGrupoId',
           'metodoPago','tarjeta','tarjetaTipo','ajusteAcuerdo','costoOriginal','costo'
@@ -91,9 +92,12 @@ service cloud.firestore {
 
     // Mensualidades/planes asignados a alumnos. Caja puede asignarlos con
     // el permiso específico; administración conserva control del catálogo.
+    // Caja (caja.ver) solo puede marcar cargado/pagado.
     match /planes_comedor/{planId} {
       allow read: if estaAutenticado();
-      allow create, update: if tengoPermiso('caja.asignar_plan_comedor') || tengoPermiso('admin.planes_comedor');
+      allow create: if tengoPermiso('caja.asignar_plan_comedor') || tengoPermiso('admin.planes_comedor');
+      allow update: if tengoPermiso('caja.asignar_plan_comedor') || tengoPermiso('admin.planes_comedor')
+        || (tengoPermiso('caja.ver') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cargado','cargadoPor','fechaCargado','pagado','pagadoPor','fechaPagado']));
       allow delete: if esAdmin() || tengoPermiso('caja.asignar_plan_comedor');
     }
 
